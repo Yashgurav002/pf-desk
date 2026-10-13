@@ -1,0 +1,13 @@
+# Optional. Default dev uses embedded PGlite. For real Postgres set
+# DATABASE_URL=postgres://pfdesk:pfdesk@localhost:5433/pfdesk
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment: { POSTGRES_USER: pfdesk, POSTGRES_PASSWORD: pfdesk, POSTGRES_DB: pfdesk }
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+  temporal:
+    image: temporalio/temporal:latest
+    command: server start-dev --ip 0.0.0.0
+    ports: ["7233:7233", "8233:8233"]
+volumes: { pgdata: {} }
