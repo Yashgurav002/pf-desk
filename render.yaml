@@ -1,0 +1,24 @@
+# Demo deploy (synthetic data). Custom domain: add in the Render dashboard once chosen.
+services:
+  - type: web
+    name: pfdesk-api
+    runtime: node
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter api start
+    healthCheckPath: /health
+    envVars:
+      - { key: NODE_VERSION, value: "24" }
+      - { key: DEMO_MODE, value: "true" }
+      - { key: DATABASE_URL, sync: false }
+      - { key: LLM_BASE_URL, sync: false }
+      - { key: LLM_API_KEY, sync: false }
+      - { key: LLM_MODEL, sync: false }
+      - { key: PUBLIC_URL, sync: false }
+  - type: web
+    name: pfdesk-web
+    runtime: node
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web build
+    startCommand: pnpm --filter web start
+    envVars:
+      - { key: NODE_VERSION, value: "24" }
+      - { key: API_URL, sync: false }

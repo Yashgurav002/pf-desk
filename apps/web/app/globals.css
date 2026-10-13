@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* In a layer so utility classes on the element (mt-0, bg-*, max-w-*) still override these. */
+@layer components {
+  html { font-size: 18px; }
+  body { background: #fff; color: #111; }
+  .btn { @apply inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800 disabled:opacity-50; }
+  .btn2 { @apply inline-block rounded-lg border-2 border-gray-800 bg-white px-4 py-2 font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50; }
+  .inp { @apply w-full rounded-lg border-2 border-gray-500 px-3 py-2; }
+  .card { @apply block rounded-xl border-2 border-gray-300 p-4; }
+  h1 { @apply mb-4 text-3xl font-bold; }
+  h2 { @apply mb-2 mt-4 text-2xl font-bold; }
+}

@@ -20,47 +20,58 @@ Source of truth: `PFDESK_PRD.md`. Tick `[x]` when done **and verified**. Owner t
 - [x] T0.5 `git init` + first commit
 
 ## Phase 1a — Core logic, pure modules (A-core)
-- [ ] T1.1 `src/pii.ts` — `Pii` tokenizer/detokenizer (names, UAN, Aadhaar, PAN, IFSC, account, phone, email, amounts) + `redact()`
-- [ ] T1.2 `src/pii.test.ts` — unit tests + 200-string red-team test, 0 leaks
-- [ ] T1.3 `src/checks.ts` — `nameScore()` (token-sort + transliteration/initials aware) and `runChecks()` driven by rule params
-- [ ] T1.4 `src/synthetic.ts` — Faker en_IN generator: employers, employees with planted errors, claims, history_claims, remarks
-- [ ] T1.5 `src/checks.test.ts` — 20 planted-error cases all caught; no "Low" risk with a blocker
+- [x] T1.1 `src/pii.ts` — `Pii` tokenizer/detokenizer (names, UAN, Aadhaar, PAN, IFSC, account, phone, email, amounts) + `redact()`
+- [x] T1.2 `src/pii.test.ts` — unit tests + 200-string red-team test, 0 leaks
+- [x] T1.3 `src/checks.ts` — `nameScore()` (token-sort + transliteration/initials aware) and `runChecks()` driven by rule params
+- [x] T1.4 `src/synthetic.ts` — Faker en_IN generator: employers, employees with planted errors, claims, history_claims, remarks
+- [x] T1.5 `src/checks.test.ts` — 20 planted-error cases all caught; no "Low" risk with a blocker
 
 ## Phase 1b — Data layer (B-data)
-- [ ] T1.6 `src/schema.sql` — PRD §10.2 schema (+ `rules.params jsonb`)
-- [ ] T1.7 `src/db.ts` — PGlite/pg adapter, `query()`, `migrate()`
-- [ ] T1.8 `src/crypto.ts` — AES-GCM field encryption, HMAC sign/verify, token hashing
-- [ ] T1.9 `src/llm.ts` — `chat(messages, pii, opts)` + `embed(text)` + `agent_runs` logging
-- [ ] T1.10 `src/search.ts` — hybrid Rule Book search (keyword + vector, RRF k=60)
-- [ ] T1.11 `src/seed.ts` — Rule Book seed (PRD §5, marked unverified) + synthetic data load + embeddings
-- [ ] T1.12 `src/search.test.ts` — "Form 10C" found by keyword, "pension withdrawal" by meaning
+- [x] T1.6 `src/schema.sql` — PRD §10.2 schema (+ `rules.params jsonb`)
+- [x] T1.7 `src/db.ts` — PGlite/pg adapter, `query()`, `migrate()`
+- [x] T1.8 `src/crypto.ts` — AES-GCM field encryption, HMAC sign/verify, token hashing
+- [x] T1.9 `src/llm.ts` — `chat(messages, pii, opts)` + `embed(text)` + `agent_runs` logging
+- [x] T1.10 `src/search.ts` — hybrid Rule Book search (keyword + vector, RRF k=60)
+- [x] T1.11 `src/seed.ts` — Rule Book seed (PRD §5, marked unverified) + synthetic data load + embeddings
+- [x] T1.12 `src/search.test.ts` — "Form 10C" found by keyword, "pension withdrawal" by meaning
 
 ## Phase 1c — API (chief)
-- [ ] T1.13 `src/index.ts` — Hono server, passcode login cookie, access log, `/health`
-- [ ] T1.14 Employers / employees / claims CRUD (masked identifiers)
-- [ ] T1.15 `POST /v1/claims/:id/precheck` — checks + history-baseline risk + ETA
-- [ ] T1.16 `POST /v1/claims/:id/message` — Gemma WhatsApp draft hi/mr/en via PII tokenizer
-- [ ] T1.17 `POST /v1/claims/:id/decode` — Gemma few-shot Rejection Decoder (fallback until Tinker)
-- [ ] T1.18 `GET /v1/today` — Today board sections
-- [ ] T1.19 `POST /v1/import/preview` + `POST /v1/import` — xlsx/csv, column mapping, drops full Aadhaar
-- [ ] T1.20 Rule Book endpoints: search, list, create, edit (re-embed)
-- [ ] T1.21 Help links + text helpline (`/v1/help-links`, `/v1/help/:token`, `/v1/help/:token/message`) with escalation
+- [x] T1.13 `src/index.ts` — Hono server, passcode login cookie, access log, `/health`
+- [x] T1.14 Employers / employees / claims CRUD (masked identifiers)
+- [x] T1.15 `POST /v1/claims/:id/precheck` — checks + history-baseline risk + ETA
+- [x] T1.16 `POST /v1/claims/:id/message` — Gemma WhatsApp draft hi/mr/en via PII tokenizer
+- [x] T1.17 `POST /v1/claims/:id/decode` — Gemma few-shot Rejection Decoder (fallback until Tinker)
+- [x] T1.18 `GET /v1/today` — Today board sections
+- [x] T1.19 `POST /v1/import/preview` + `POST /v1/import` — xlsx/csv, column mapping, drops full Aadhaar
+- [x] T1.20 Rule Book endpoints: search, list, create, edit (re-embed)
+- [x] T1.21 Help links + text helpline (`/v1/help-links`, `/v1/help/:token`, `/v1/help/:token/message`) with escalation
 
 ## Phase 1d — Web UI (C-web)
-- [ ] T1.22 Layout, nav, demo banner, login page, `/api/*` proxy to API
-- [ ] T1.23 Today board (home)
-- [ ] T1.24 Claims list + new claim + claim detail (Pre-check, risk badge, issues, Copy WhatsApp, status, Decoder, help link)
-- [ ] T1.25 Employees list
-- [ ] T1.26 Import page with column mapping + preview
-- [ ] T1.27 Rule Book page (search, edit, unverified badge)
-- [ ] T1.28 Employee help page `/help/[token]` (text chat)
+- [x] T1.22 Layout, nav, demo banner, login page, `/api/*` proxy to API
+- [x] T1.23 Today board (home)
+- [x] T1.24 Claims list + new claim + claim detail (Pre-check, risk badge, issues, Copy WhatsApp, status, Decoder, help link)
+- [x] T1.25 Employees list
+- [x] T1.26 Import page with column mapping + preview
+- [x] T1.27 Rule Book page (search, edit, unverified badge)
+- [x] T1.28 Employee help page `/help/[token]` (text chat)
 
 ## Phase 1e — Integration (chief)
-- [ ] T1.29 `pnpm dev` runs both apps; synthetic data loads; smoke-test every endpoint
-- [ ] T1.30 Typecheck + tests green; README with run instructions
-- [ ] T1.31 Commit
+- [x] T1.29 `pnpm dev` runs both apps; synthetic data loads; smoke-test every endpoint
+- [x] T1.30 Typecheck + tests green; README with run instructions
+- [x] T1.31 Commit
 
 ---
+
+## Phase 1 follow-ups (found during integration)
+- [x] Seeded open claims are pre-checked on demo boot so the Today board isn't empty
+- [x] Form-code queries ("Form 10C") rank the exact form first (keyword leg weighted x3)
+- [x] Helpline: ETA computed for submitted claims; "no estimate → no date" guard (model had invented a date)
+- [x] Helpline: off-topic questions (loans, advice) get a fixed "consultant will call" reply + escalation
+- [x] Next proxy timeout raised to 180s (cold Gemma calls take ~55s)
+- [x] Web risk badge: API sends 0..1 fraction; bands aligned with API
+- [ ] Visual click-through of the UI in a browser (Chrome extension wasn't connected)
+- [ ] Decide: should the helpline answer *rule* questions from the Rule Book, or always escalate them? (currently escalates)
+- [ ] Hindi/Marathi message quality review — **needs dad**
 
 ## Later phases (blocked on keys / credits / dad's input)
 - [ ] P0 Interview dad, verify Rule Book entries (§2.3, §5) — **needs dad**
