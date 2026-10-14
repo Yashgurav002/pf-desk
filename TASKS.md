@@ -92,9 +92,9 @@ Design: fine-tuned **Qwen3-8B** (Tinker LoRA) does extraction — remark → `{c
 - [x] T3.1 Label tool: `/label` page in the web app + `remark_labels` table + API (dad picks category + fix steps; import/export JSONL)
 - [x] T3.2 Seed remark pool: 40 hand-written synthetic remarks + per-category template grammar (EPFO-style abbreviations, caps, terse wording) → `ml/decoder/data/remarks.jsonl`
 - [x] T3.3 `ml/decoder/build_dataset.py` — merge dad's labels (preferred) + synthetic pool; augment (case, abbreviations, typos, punctuation); **grouped** 70/30 split by source remark (no leakage); 25 hard cases kept in test
-- [ ] T3.4 `ml/decoder/tinker_train.py` — LoRA SFT on Qwen3-8B (thinking off, cookbook renderer), logs loss, saves sampler weights, writes run id
-- [ ] T3.5 `ml/decoder/eval.py` — base Qwen3-8B zero-shot vs Gemma 3 4B few-shot vs fine-tuned: macro-F1, JSON validity, p50 latency, cost/1k → `evaluation/decoder.md`
-- [ ] T3.6 Export: download adapter → PEFT → GGUF LoRA → Ollama `pfdesk-decoder` (`ml/decoder/export.md`)
+- [x] T3.4 `ml/decoder/tinker_train.py` — LoRA SFT on Qwen3-8B (thinking off, cookbook renderer), logs loss, saves sampler weights, writes run id
+- [x] T3.5 `ml/decoder/eval.py` — base Qwen3-8B zero-shot vs Gemma 3 4B few-shot vs fine-tuned: macro-F1, JSON validity, p50 latency, cost/1k → `evaluation/decoder.md`
+- [x] T3.6 Export: adapter → PEFT → GGUF LoRA → llama-server on Ollama's qwen3:8b file (`ml/decoder/export.md`; Ollama 0.17 rejects LoRA)
 - [x] T3.7 API decode: fine-tuned extraction (DECODER_MODEL) + Gemma messages; Gemma few-shot fallback when the decoder isn't installed
 - [ ] T3.8 Verify end to end, tests green, commit
 - [ ] T3.9 Dad labels 150–400 real remarks with the label tool, then retrain — **needs dad**

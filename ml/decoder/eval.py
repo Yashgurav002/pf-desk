@@ -7,7 +7,7 @@ Systems:
   base      Qwen3-8B zero-shot on Tinker (same prompt, no fine-tune)          needs TINKER_API_KEY
   tuned     fine-tuned Qwen3-8B on Tinker (model_path from run.json)          needs TINKER_API_KEY + run.json
   gemma     Gemma 3 4B few-shot via Ollama on this laptop (current fallback)
-  local     fine-tuned decoder exported to Ollama (`pfdesk-decoder`), on this laptop
+  local     fine-tuned decoder: Ollama's qwen3:8b Q4 file + LoRA via llama-server, on this laptop
 """
 import argparse
 import asyncio
@@ -21,6 +21,7 @@ from common import BASE_MODEL, CATEGORIES, DATA, HERE, RENDERER, SYSTEM_PROMPT, 
 
 SAMPLE_PRICE_PER_M = 0.60  # USD, Qwen3-8B sampling, tinker models & pricing page, Oct 2026
 OLLAMA = os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1")
+LOCAL = os.environ.get("DECODER_BASE_URL", "http://127.0.0.1:8791/v1")  # llama-server started by `pnpm dev` (run.mjs)
 
 
 def fewshot() -> list[dict]:
@@ -33,9 +34,9 @@ def fewshot() -> list[dict]:
     return shots
 
 
-def ollama(model: str, messages: list[dict]) -> tuple[str, int]:
+def ollama(model: str, messages: list[dict], base: str = OLLAMA) -> tuple[str, int]:
     body = json.dumps({"model": model, "messages": messages, "temperature": 0, "response_format": {"type": "json_object"}}).encode()
-    req = urllib.request.Request(f"{OLLAMA}/chat/completions", body, {"content-type": "application/json"})
+    req = urllib.request.Request(f"{base}/chat/completions", body, {"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=180) as r:
         d = json.load(r)
     return d["choices"][0]["message"]["content"], d.get("usage", {}).get("total_tokens", 0)
@@ -66,13 +67,13 @@ async def run_tinker(model_path: str | None, examples: list[dict]) -> list[tuple
     return await asyncio.gather(*(one(ex) for ex in examples))
 
 
-def run_ollama(model: str, examples: list[dict], shots: list[dict]) -> list[tuple[str, float, int]]:
+def run_ollama(model: str, examples: list[dict], shots: list[dict], base: str = OLLAMA) -> list[tuple[str, float, int]]:
     out = []
     for i, ex in enumerate(examples):
         msgs = [ex["messages"][0], *shots, ex["messages"][1]]
         t = time.time()
         try:
-            text, toks = ollama(model, msgs)
+            text, toks = ollama(model, msgs, base)
         except Exception as e:  # noqa: BLE001 - a failed call is an invalid answer, not a crash
             text, toks = f"ERROR {e}", 0
         out.append((text, time.time() - t, toks))
@@ -125,7 +126,7 @@ def main() -> None:
         elif name == "gemma":
             outs, label = run_ollama(a.gemma_model, examples, fewshot()), f"{a.gemma_model} few-shot (Ollama, laptop)"
         elif name == "local":
-            outs, label = run_ollama(a.local_model, examples, []), f"{a.local_model} fine-tuned (Ollama, laptop)"
+            outs, label = run_ollama(a.local_model, examples, [], LOCAL), "Qwen3-8B Q4 + PF Desk LoRA (llama-server, laptop)"
         else:
             raise SystemExit(f"unknown system {name}")
         r = score(examples, outs)
@@ -154,7 +155,7 @@ Updated {time.strftime('%Y-%m-%d %H:%M')} · test set: {n} examples from `ml/dec
 |---|---|---|---|---|---|---|---|---|---|
 {chr(10).join(rows + old)}
 
-Latency: Tinker rows are remote API round-trips (32 concurrent); Ollama rows are on the laptop (CPU, sequential). Cost: Tinker sampling at ${SAMPLE_PRICE_PER_M}/M tokens (prompt + output); local models cost nothing per call.
+Latency: Tinker rows are remote API round-trips (32 concurrent); laptop rows are local CPU inference, one at a time. Cost: Tinker sampling at ${SAMPLE_PRICE_PER_M}/M tokens (prompt + output); local models cost nothing per call.
 
 Training: {json.dumps(run) if run else 'not run yet'}
 """

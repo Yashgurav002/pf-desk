@@ -1,0 +1,10 @@
+{
+  "name": "decoder",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env run.mjs",
+    "test": "echo no decoder tests",
+    "typecheck": "echo no typecheck"
+  }
+}

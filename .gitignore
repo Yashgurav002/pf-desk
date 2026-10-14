@@ -10,3 +10,5 @@ __pycache__
 ml/decoder/.venv
 ml/decoder/data/pred_*.jsonl
 ml/decoder/out/
+ml/decoder/data/*.log
+ml/decoder/data/*.bak
