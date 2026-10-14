@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 const NAV = [
-  ["/", "Today"], ["/claims", "Claims"], ["/employees", "Employees"], ["/import", "Import"], ["/rules", "Rule Book"],
+  ["/", "Today"], ["/claims", "Claims"], ["/employees", "Employees"], ["/import", "Import"], ["/rules", "Rule Book"], ["/label", "Label"],
 ] as const;
 
 export default function Shell({ children }: { children: React.ReactNode }) {

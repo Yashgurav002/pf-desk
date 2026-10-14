@@ -15,7 +15,7 @@ type Detail = {
 };
 type Decoded = {
   category: string; fields_involved: string[]; fix_steps: { id: string; title: string }[];
-  employee_message_hi: string; employee_message_mr: string; employee_message_en: string; confidence: number; model: string;
+  employee_message_hi: string; employee_message_mr: string; employee_message_en: string; model: string;
 };
 
 const FACTS: [string, string][] = [
@@ -148,7 +148,7 @@ export default function ClaimDetail() {
         {busy === "dec" && <Loading text="Reading the remark…" />}
         {dec && (
           <div className="mt-3 space-y-2">
-            <p><b>Category:</b> {dec.category} <span className="text-sm text-gray-600">· confidence {Math.round(dec.confidence * 100)}% · model: {dec.model}</span></p>
+            <p><b>Category:</b> {dec.category} <span className="text-sm text-gray-600">· model: {dec.model}</span></p>
             <p><b>Fields involved:</b> {dec.fields_involved.join(", ") || "—"}</p>
             <div><b>Fix steps:</b>
               <ol className="list-decimal pl-6">{dec.fix_steps.map((s) => <li key={s.id}>{s.title} <span className="text-gray-600">[rule {s.id}]</span></li>)}</ol>

@@ -13,6 +13,9 @@ import { Pii } from './pii.ts';
 import { runChecks, features } from './checks.ts';
 import type { Issue, EmployeeFacts } from './checks.ts';
 import { REMARKS } from './synthetic.ts';
+import { labels, VOCAB } from './labels.ts';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { tabpfnRisk, tabpfnEta, ageBand, sizeBand } from './tabpfn.ts';
 import type { FeatureRow } from './tabpfn.ts';
 
@@ -313,38 +316,64 @@ Explain to the consultant in 3-5 short sentences of plain English: what to fix f
   } catch (err) { return llmError(c, err); }
 });
 
+// Rejection Decoder (PRD §15). Stage 1 extraction: fine-tuned decoder (DECODER_MODEL, same prompt it was trained on),
+// or Gemma few-shot when no fine-tune is installed. Stage 2: Gemma writes the employee messages from the facts.
+const DECODER_PROMPT = readFileSync(resolve(import.meta.dirname, '../../../ml/decoder/system_prompt.txt'), 'utf8').trim();
+const FINE_TUNED = !!env.DECODER_MODEL && env.DECODER_MODEL !== env.LLM_MODEL;
+async function extractRemark(remark: string, pii: Pii) {
+  const user = { role: 'user' as const, content: `Remark: ${remark}` };
+  const shots = () => CATEGORIES.flatMap((cat) => {
+    const r = REMARKS.find((x) => x.category === cat);
+    const v = VOCAB.categories[cat];
+    return r && v ? [{ role: 'user' as const, content: `Remark: ${r.text}` }, { role: 'assistant' as const, content: JSON.stringify({ category: cat, fields_involved: v.fields, fix_step_ids: v.fix }) }] : [];
+  });
+  const attempts = FINE_TUNED
+    ? [{ model: env.DECODER_MODEL!, baseUrl: env.DECODER_BASE_URL, few: false }, { model: env.LLM_MODEL!, baseUrl: undefined, few: true }]
+    : [{ model: env.LLM_MODEL!, baseUrl: undefined, few: true }];
+  let lastErr: unknown;
+  for (const a of attempts) {
+    try {
+      const raw = await chat([{ role: 'system', content: DECODER_PROMPT }, ...(a.few ? shots() : []), user], pii, { json: true, model: a.model, baseUrl: a.baseUrl, kind: 'decode' });
+      const d = JSON.parse(raw);
+      if (!CATEGORIES.includes(d.category)) throw new Error(`unknown category ${d.category}`);
+      const pick = (xs: unknown, allowed: string[]) => (Array.isArray(xs) ? xs.filter((x) => allowed.includes(x)) : []);
+      const allFix = Object.values(VOCAB.categories).flatMap((v) => v.fix);
+      return { category: d.category as string, fields_involved: pick(d.fields_involved, VOCAB.fields), fix_step_ids: pick(d.fix_step_ids, allFix), model: a.few ? `${a.model} few-shot` : `${a.model} (fine-tuned)` };
+    } catch (err) { lastErr = err; }
+  }
+  throw lastErr;
+}
 app.post('/v1/claims/:id/decode', async (c) => {
   const { remark } = await c.req.json();
   if (!remark?.trim()) return c.json({ error: 'remark required' }, 400);
   const [claim] = await query('select * from claims where id = $1', [c.req.param('id')]);
   if (!claim) return c.json({ error: 'Not found' }, 404);
   const e = await getEmployee(claim.employee_id);
-  const rules = await query('select id, title from rules order by id');
-  const shots = CATEGORIES.map((cat) => REMARKS.find((r) => r.category === cat)).filter(Boolean).slice(0, 8) as { text: string; category: string }[];
+  const pii = employeePii(e);
   try {
+    const x = await extractRemark(remark, pii);
+    const rules = await query('select id, title, body from rules where id = any($1)', [x.fix_step_ids]);
     const raw = await chat([
-      { role: 'system', content: `You decode terse EPFO claim rejection remarks for a PF consultant.
-Categories: ${CATEGORIES.join(', ')}.
-Rule Book ids you may cite as fix steps:\n${rules.map((r: any) => `${r.id}: ${r.title}`).join('\n')}
-Examples:\n${shots.map((s) => `"${s.text}" -> ${s.category}`).join('\n')}
-Reply as JSON: {"category": string, "fields_involved": string[], "fix_step_ids": string[], "employee_message_hi": string, "employee_message_mr": string, "employee_message_en": string, "confidence": number between 0 and 1}.
-Messages: 1-2 short polite sentences to the employee saying what document or correction is needed (Hindi and Marathi in Devanagari).` },
-      { role: 'user', content: `Form ${claim.form}. Remark: ${remark}` },
-    ], employeePii(e), { json: true, model: env.DECODER_MODEL, baseUrl: env.DECODER_BASE_URL, kind: 'decode' });
-    const d = JSON.parse(raw);
-    const ruleTitle = new Map(rules.map((r: any) => [r.id, r.title]));
+      { role: 'system', content: CONSULTANT_PROMPT },
+      { role: 'user', content: `EPFO rejected ${e.name_uan}'s Form ${claim.form} claim. Problem: ${x.category.replaceAll('_', ' ')} (fields: ${x.fields_involved.join(', ') || 'unclear'}).
+How to fix:\n${rules.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).join('\n') || '- ask the consultant'}
+Write 1-2 short polite WhatsApp sentences to the employee saying exactly what document or correction is needed. No rule ids.
+Reply with exactly this JSON shape: {"hi": "<message in Hindi, Devanagari script>", "mr": "<message in Marathi, Devanagari script>", "en": "<message in English>"}.` },
+    ], pii, { json: true, kind: 'decode_message' });
+    const j = JSON.parse(raw);
+    const m = { hi: j.hi ?? j.hindi ?? j.Hindi, mr: j.mr ?? j.marathi ?? j.Marathi, en: j.en ?? j.english ?? j.English };
     const out = {
-      category: CATEGORIES.includes(d.category) ? d.category : 'other',
-      fields_involved: Array.isArray(d.fields_involved) ? d.fields_involved : [],
-      fix_steps: (Array.isArray(d.fix_step_ids) ? d.fix_step_ids : []).filter((id: string) => ruleTitle.has(id)).map((id: string) => ({ id, title: ruleTitle.get(id) })),
-      employee_message_hi: d.employee_message_hi ?? '', employee_message_mr: d.employee_message_mr ?? '', employee_message_en: d.employee_message_en ?? '',
-      confidence: Math.max(0, Math.min(1, Number(d.confidence) || 0)),
-      model: `${env.DECODER_MODEL} few-shot`,
+      category: x.category, fields_involved: x.fields_involved,
+      fix_steps: rules.map((r: any) => ({ id: r.id, title: r.title })),
+      employee_message_hi: m.hi ?? '', employee_message_mr: m.mr ?? '', employee_message_en: m.en ?? '',
+      model: `${x.model} + ${env.LLM_MODEL} messages`,
     };
     await query('update claims set decoded = $2, rejection_remark = coalesce(rejection_remark, $3) where id = $1', [claim.id, JSON.stringify(out), remark]);
     return c.json(out);
   } catch (err) { return llmError(c, err); }
 });
+
+app.route('/v1/labels', labels);
 
 // ---------- rule book ----------
 const vec = (v: number[] | null) => (v ? `[${v.join(',')}]` : null);

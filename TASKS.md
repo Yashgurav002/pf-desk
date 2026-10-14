@@ -87,10 +87,23 @@ Source of truth: `PFDESK_PRD.md`. Tick `[x]` when done **and verified**. Owner t
 - [ ] T2.9 Real history from dad's records into `history_claims` (150+ rows) — **needs dad**
 - [ ] T2.10 Dad approves a Hindi message — **needs dad**
 
+## Phase 3 — Rejection Decoder fine-tuned with Tinker
+Design: fine-tuned **Qwen3-8B** (Tinker LoRA) does extraction — remark → `{category, fields_involved, fix_step_ids}`; Gemma writes the hi/mr/en messages from that (context-first). Small model stays small; messages stay editable.
+- [x] T3.1 Label tool: `/label` page in the web app + `remark_labels` table + API (dad picks category + fix steps; import/export JSONL)
+- [x] T3.2 Seed remark pool: 40 hand-written synthetic remarks + per-category template grammar (EPFO-style abbreviations, caps, terse wording) → `ml/decoder/data/remarks.jsonl`
+- [x] T3.3 `ml/decoder/build_dataset.py` — merge dad's labels (preferred) + synthetic pool; augment (case, abbreviations, typos, punctuation); **grouped** 70/30 split by source remark (no leakage); 25 hard cases kept in test
+- [ ] T3.4 `ml/decoder/tinker_train.py` — LoRA SFT on Qwen3-8B (thinking off, cookbook renderer), logs loss, saves sampler weights, writes run id
+- [ ] T3.5 `ml/decoder/eval.py` — base Qwen3-8B zero-shot vs Gemma 3 4B few-shot vs fine-tuned: macro-F1, JSON validity, p50 latency, cost/1k → `evaluation/decoder.md`
+- [ ] T3.6 Export: download adapter → PEFT → GGUF LoRA → Ollama `pfdesk-decoder` (`ml/decoder/export.md`)
+- [x] T3.7 API decode: fine-tuned extraction (DECODER_MODEL) + Gemma messages; Gemma few-shot fallback when the decoder isn't installed
+- [ ] T3.8 Verify end to end, tests green, commit
+- [ ] T3.9 Dad labels 150–400 real remarks with the label tool, then retrain — **needs dad**
+- [ ] T3.10 Dad rates 20 decoded messages 1–5 — **needs dad**
+- [ ] T3.0 `TINKER_API_KEY` in `.env` — **needs you** (Tinker console → API keys)
+
 ## Later phases (blocked on keys / credits / dad's input)
 - [ ] P0 Interview dad, verify Rule Book entries (§2.3, §5) — **needs dad**
 - [ ] P0 Claim promos, TabPFN key, domain — **needs you**
-- [ ] P3 Decoder: label tool, dataset, Tinker LoRA, eval → `evaluation/decoder.md`
 - [ ] P4 Temporal MonthlyCycle + ClaimFollowUp workflows; salary upload validation (F5)
 - [ ] P4 ElevenLabs voice helpline; Sentry tracing; Render deploy + domain
 - [ ] P4 Hindi/Marathi UI label toggle

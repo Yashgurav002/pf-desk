@@ -1,0 +1,20 @@
+{
+  "categories": {
+    "name_mismatch": {"fields": ["name"], "fix": ["R-NAME-MATCH"]},
+    "father_name_mismatch": {"fields": ["father_name"], "fix": ["R-FATHER-NAME"]},
+    "dob_mismatch": {"fields": ["dob"], "fix": ["R-DOB"]},
+    "bank_details_invalid": {"fields": ["bank_account", "ifsc"], "fix": ["R-IFSC", "R-BANK-ACCOUNT"]},
+    "bank_not_verified": {"fields": ["bank_account"], "fix": ["R-BANK-VERIFIED"]},
+    "cheque_image_unclear": {"fields": ["cheque_image"], "fix": ["R-DOCS-CLEAR"]},
+    "kyc_not_approved": {"fields": ["kyc"], "fix": ["R-KYC-EMPLOYER"]},
+    "aadhaar_not_linked": {"fields": ["aadhaar"], "fix": ["R-AADHAAR-LINK"]},
+    "exit_date_missing": {"fields": ["date_of_exit"], "fix": ["R-EXIT-DATE"]},
+    "service_ineligible": {"fields": ["service_period"], "fix": ["R-SERVICE-PERIOD"]},
+    "waiting_period": {"fields": ["date_of_exit"], "fix": ["R-WAITING-PERIOD"]},
+    "purpose_ineligible": {"fields": ["purpose"], "fix": ["R-PARTIAL-WITHDRAWAL"]},
+    "duplicate_claim": {"fields": ["claim"], "fix": ["R-DUPLICATE"]},
+    "signature_or_photo": {"fields": ["signature", "photo"], "fix": ["R-DOCS-CLEAR"]},
+    "other": {"fields": [], "fix": []}
+  },
+  "fields": ["name", "father_name", "dob", "bank_account", "ifsc", "cheque_image", "kyc", "aadhaar", "date_of_exit", "service_period", "purpose", "claim", "signature", "photo"]
+}

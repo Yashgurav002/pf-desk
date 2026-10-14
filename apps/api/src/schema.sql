@@ -121,3 +121,14 @@ create table if not exists agent_runs (
 create table if not exists access_log (
   id bigserial primary key, actor text, action text, ref_id uuid, at timestamptz default now()
 );
+
+create table if not exists remark_labels (
+  id uuid primary key default gen_random_uuid(),
+  text text not null unique,
+  category text not null,
+  fields_involved text[] not null default '{}',
+  fix_step_ids text[] not null default '{}',
+  source text not null default 'consultant',
+  labelled_by text,
+  created_at timestamptz default now()
+);

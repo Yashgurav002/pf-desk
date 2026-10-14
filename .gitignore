@@ -7,3 +7,6 @@ next-env.d.ts
 ml/tabpfn/.venv
 ml/tabpfn/history.csv
 __pycache__
+ml/decoder/.venv
+ml/decoder/data/pred_*.jsonl
+ml/decoder/out/
