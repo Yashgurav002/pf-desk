@@ -73,10 +73,23 @@ Source of truth: `PFDESK_PRD.md`. Tick `[x]` when done **and verified**. Owner t
 - [ ] Decide: should the helpline answer *rule* questions from the Rule Book, or always escalate them? (currently escalates)
 - [ ] Hindi/Marathi message quality review — **needs dad**
 
+## Phase 2 — TabPFN risk + ETA, Gemma explanations
+- [x] T2.1 `history_claims.submitted_at` (time-ordered split needs a date); synthetic history spread over ~18 months
+- [x] T2.2 `pnpm --filter api export-history` → `ml/tabpfn/history.csv` (de-identified columns only; gitignored)
+- [x] T2.3 `ml/tabpfn/serve.py` — stdlib HTTP service: `POST /predict` {task, train, rows} → probabilities / ETA quantiles; `TABPFN_MODE=local|api`
+- [x] T2.4 `ml/tabpfn/train_eval.py` — time-ordered split; baselines (form rate, logistic regression, gradient boosting; ETA median-per-form); ROC-AUC, Brier, precision@high-risk, ETA MAE + interval coverage → `evaluation/tabpfn.md`
+- [x] T2.5 API `predictRisk` / `predictEta` call the service, fall back to the history baseline when it's down; model name shown in UI
+- [x] T2.6 `POST /v1/claims/:id/explain` — Gemma colleague-style explanation of issues + risk (context-first, PII-tokenized, cites rule ids) + button on claim page
+- [x] T2.7 `pnpm dev` also starts the TabPFN service; README + `.env.example` updated
+- [x] T2.8 Verify end to end, tests green, commit
+- [ ] T2.11 TabPFN ETA interval is too narrow (50% p20–p80 coverage vs ~60% expected) — widen (e.g. p10–p90) after real data
+- [ ] T2.12 API mode (`TABPFN_MODE=api`) written but untested; `tabpfn-client` needs pandas<3 — **needs TabPFN API key**
+- [ ] T2.9 Real history from dad's records into `history_claims` (150+ rows) — **needs dad**
+- [ ] T2.10 Dad approves a Hindi message — **needs dad**
+
 ## Later phases (blocked on keys / credits / dad's input)
 - [ ] P0 Interview dad, verify Rule Book entries (§2.3, §5) — **needs dad**
 - [ ] P0 Claim promos, TabPFN key, domain — **needs you**
-- [ ] P2 TabPFN risk + ETA with baselines → `evaluation/tabpfn.md` (replaces history-baseline)
 - [ ] P3 Decoder: label tool, dataset, Tinker LoRA, eval → `evaluation/decoder.md`
 - [ ] P4 Temporal MonthlyCycle + ClaimFollowUp workflows; salary upload validation (F5)
 - [ ] P4 ElevenLabs voice helpline; Sentry tracing; Render deploy + domain

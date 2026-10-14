@@ -13,6 +13,8 @@ import { Pii } from './pii.ts';
 import { runChecks, features } from './checks.ts';
 import type { Issue, EmployeeFacts } from './checks.ts';
 import { REMARKS } from './synthetic.ts';
+import { tabpfnRisk, tabpfnEta, ageBand, sizeBand } from './tabpfn.ts';
+import type { FeatureRow } from './tabpfn.ts';
 
 const env = process.env;
 const DEMO = env.DEMO_MODE === 'true';
@@ -101,8 +103,10 @@ const employeePii = (e: any) => {
   return pii;
 };
 
-// ponytail: history-match baseline (PRD §14 baseline #1 refined by flags) until TabPFN lands in Phase 2
-async function predictRisk(form: string, f: Record<string, any>) {
+// TabPFN first (ml/tabpfn/serve.py); history baselines when the service is down or for fast bulk runs
+async function predictRisk(form: string, f: Record<string, any>, row?: FeatureRow) {
+  const t = row && (await tabpfnRisk(row));
+  if (t) return t;
   const flags = [f.bank_verified ?? true, f.kyc_approved ?? true, f.aadhaar_linked ?? true, f.exit_marked ?? true, f.dob_match ?? true, (f.name_match ?? 1) < 0.85, (f.father_match ?? 1) < 0.85];
   const [m] = await query(`select count(*)::int n, avg((outcome = 'rejected')::int)::float rate from history_claims
     where form = $1 and bank_verified = $2 and kyc_approved = $3 and aadhaar_linked = $4 and exit_marked = $5 and dob_match = $6
@@ -111,7 +115,9 @@ async function predictRisk(form: string, f: Record<string, any>) {
   const [b] = await query(`select count(*)::int n, avg((outcome = 'rejected')::int)::float rate from history_claims where form = $1`, [form]);
   return { pct: b.n ? b.rate : 0.1, model: `form-rate baseline (n=${b.n})` };
 }
-async function predictEta(form: string) {
+async function predictEta(form: string, row?: FeatureRow) {
+  const t = row && (await tabpfnEta(row));
+  if (t) return t;
   const [r] = await query(`select percentile_cont(0.5) within group (order by days_to_outcome)::float p50,
     percentile_cont(0.2) within group (order by days_to_outcome)::float p20,
     percentile_cont(0.8) within group (order by days_to_outcome)::float p80, count(*)::int n
@@ -221,7 +227,15 @@ app.patch('/v1/claims/:id', async (c) => {
   log(`status_${b.status}`, r.id);
   return c.json(r);
 });
-async function precheckClaim(id: string) {
+async function featureRow(e: any, claim: any, f: Record<string, any>): Promise<FeatureRow> {
+  const [er] = await query(`select er.establishment_code, (select count(*)::int from employees x where x.employer_id = er.id) n
+    from employers er where er.id = $1`, [e.employer_id]);
+  return {
+    ...(f as any), age_band: ageBand(e.dob_uan ?? e.dob_aadhaar, today()), employer_size_band: sizeBand(er?.n ?? 0),
+    submit_month: Number((claim.submitted_at ?? today()).slice(5, 7)), office_code: (er?.establishment_code ?? '').slice(0, 5).toUpperCase() || 'unknown',
+  };
+}
+async function precheckClaim(id: string, { fast = false } = {}) {
   const [claim] = await query('select * from claims where id = $1', [id]);
   if (!claim) return null;
   const e = facts(await getEmployee(claim.employee_id));
@@ -229,8 +243,9 @@ async function precheckClaim(id: string) {
   const others = await query('select id, form, status from claims where employee_id = $1 and id <> $2', [claim.employee_id, claim.id]);
   const issues = runChecks(e, claim, rules, others, today());
   const f = features(e, claim, today());
-  const risk = await predictRisk(claim.form, f);
-  const eta = await predictEta(claim.form);
+  const row = fast ? undefined : await featureRow(e, claim, f);
+  const risk = await predictRisk(claim.form, f, row);
+  const eta = await predictEta(claim.form, row);
   await query('insert into precheck_results (claim_id, issues, features) values ($1,$2,$3)', [claim.id, JSON.stringify(issues), JSON.stringify(f)]);
   const [updated] = await query(`update claims set risk_pct = $2, risk_model = $3, eta_days = $4, eta_low = $5, eta_high = $6, eta_model = $7,
     status = case when status = 'draft' then 'checked' else status end where id = $1 returning *`,
@@ -266,6 +281,34 @@ app.post('/v1/claims/:id/message', async (c) => {
       { role: 'system', content: CONSULTANT_PROMPT },
       { role: 'user', content: `Write a short, polite WhatsApp message in ${LANGS[lang]} from the PF consultant's office to the employee ${e.name_uan} about their Form ${claim.form} claim.\n${task}\nUse simple words. No rule ids in the message. Output only the message text.` },
     ], employeePii(e), { kind: 'message' });
+    return c.json({ text: text.trim(), model: env.LLM_MODEL });
+  } catch (err) { return llmError(c, err); }
+});
+
+app.post('/v1/claims/:id/explain', async (c) => {
+  const [claim] = await query('select * from claims where id = $1', [c.req.param('id')]);
+  if (!claim) return c.json({ error: 'Not found' }, 404);
+  const [p] = await query('select issues from precheck_results where claim_id = $1 order by created_at desc limit 1', [claim.id]);
+  if (!p) return c.json({ error: 'Run Pre-check first' }, 400);
+  const issues: Issue[] = p.issues;
+  const e = await getEmployee(claim.employee_id);
+  const rules = issues.length ? await query('select id, title, body from rules where id = any($1)', [[...new Set(issues.map((i) => i.rule_id))]]) : [];
+  const v = precheckView(claim, issues);
+  // context-first (PRD §8): facts gathered in code, the model only writes
+  const facts = `Claim: Form ${claim.form} for employee ${e.name_uan}, status ${claim.status}.
+Rejection risk: ${Math.round(v.risk_pct * 100)}% (${v.risk_band}), model ${v.risk_model}.
+${v.eta ? `Settlement estimate if submitted today: ${Math.round(v.eta.low)}-${Math.round(v.eta.high)} days, most likely ${Math.round(v.eta.days)} (model ${v.eta.model}).` : 'No settlement estimate.'}
+Problems found:
+${issues.map((i) => `- [${i.rule_id}] (${i.severity}) ${i.message} Fix: ${i.fix}`).join('\n') || '- none'}
+Rule Book entries:
+${rules.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).join('\n') || '- none'}`;
+  try {
+    const text = await chat([
+      { role: 'system', content: CONSULTANT_PROMPT },
+      { role: 'user', content: `${facts}
+
+Explain to the consultant in 3-5 short sentences of plain English: what to fix first and why, whether it is safe to submit now, and what the risk and estimate mean. Cite rule ids in square brackets.` },
+    ], employeePii(e), { kind: 'explain' });
     return c.json({ text: text.trim(), model: env.LLM_MODEL });
   } catch (err) { return llmError(c, err); }
 });
@@ -480,7 +523,7 @@ await seedRules();
 if (DEMO) {
   await seedDemo();
   // demo realism: the consultant has already run Pre-check on open claims
-  for (const { id } of await query(`select id from claims c where status in ('draft','checked') and not exists (select 1 from precheck_results p where p.claim_id = c.id)`)) await precheckClaim(id);
+  for (const { id } of await query(`select id from claims c where status in ('draft','checked') and not exists (select 1 from precheck_results p where p.claim_id = c.id)`)) await precheckClaim(id, { fast: true });
 }
 embedMissingRules().catch((err) => console.warn('embedding skipped:', err.message));
 const port = Number(env.API_PORT || env.PORT || 8787);

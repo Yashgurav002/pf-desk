@@ -108,7 +108,7 @@ const EMPLOYEE_COLS = ['name_uan', 'name_bank', 'name_aadhaar', 'father_name_uan
   'date_of_joining', 'date_of_exit', 'preferred_language'];
 const CLAIM_COLS = ['form', 'created_at', 'purpose', 'status', 'submitted_at', 'settled_at', 'rejected_at', 'rejection_remark'];
 const HISTORY_COLS = ['form', 'service_months', 'age_band', 'employer_size_band', 'name_match', 'father_match', 'dob_match',
-  'bank_verified', 'kyc_approved', 'aadhaar_linked', 'exit_marked', 'months_since_exit', 'submit_month', 'office_code',
+  'bank_verified', 'kyc_approved', 'aadhaar_linked', 'exit_marked', 'months_since_exit', 'submitted_at', 'submit_month', 'office_code',
   'outcome', 'days_to_outcome', 'rejection_category'];
 
 /** Loads synthetic data (DEMO_MODE only, and only into an empty DB). */

@@ -13,8 +13,9 @@ Needs Node 24+, pnpm, and [Ollama](https://ollama.com) with `gemma3:4b` and `nom
 ```sh
 ollama pull gemma3:4b && ollama pull nomic-embed-text
 pnpm install
+pnpm --filter tabpfn setup  # Python venv for TabPFN (CPU torch); optional — API falls back to baselines
 cp .env.example .env      # DEMO_MODE=true loads synthetic data
-pnpm dev                  # web http://localhost:3000 (passcode: demo), API :8787
+pnpm dev                  # web http://localhost:3000 (passcode: demo), API :8787, TabPFN :8790
 pnpm seed                 # wipe and reload synthetic demo data
 pnpm test
 ```
@@ -36,4 +37,11 @@ UAN, bank account and phone are encrypted at rest; only the last 4 Aadhaar digit
 - `apps/api` — Hono API (Node 24 runs the TypeScript directly). `pii.ts` tokenizer, `checks.ts` Pre-check rules, `search.ts` hybrid Rule Book search, `synthetic.ts` demo data.
 - `apps/web` — Next.js + Tailwind UI. `/api/*` is proxied to the API.
 
-Risk and ETA currently use history baselines (labelled in the UI); TabPFN, the Tinker decoder, Temporal, voice and deploy are later phases in `TASKS.md`.
+- `ml/tabpfn` — TabPFN service (`serve.py`) for rejection risk and settlement ETA, and `train_eval.py` (time-ordered split vs baselines → [`evaluation/tabpfn.md`](evaluation/tabpfn.md)). Only de-identified columns are ever sent to it. Uses open TabPFN v2 on CPU by default; set `TABPFN_TOKEN` (local v3.5) or `TABPFN_MODE=api` + `TABPFN_API_KEY` (Prior Labs cloud). If the service is down, the API uses history baselines and says so in the UI.
+
+```sh
+cd apps/api && pnpm export-history   # history_claims -> ml/tabpfn/history.csv
+pnpm --filter tabpfn eval            # writes evaluation/tabpfn.md
+```
+
+The Tinker decoder, Temporal, voice and deploy are later phases in `TASKS.md`.

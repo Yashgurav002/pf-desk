@@ -58,11 +58,12 @@ create table if not exists history_claims (
   form text, service_months int, age_band text, employer_size_band text,
   name_match real, father_match real, dob_match boolean, bank_verified boolean,
   kyc_approved boolean, aadhaar_linked boolean, exit_marked boolean,
-  months_since_exit int, submit_month int, office_code text,
+  months_since_exit int, submitted_at date, submit_month int, office_code text,
   outcome text check (outcome in ('settled','rejected')),
   days_to_outcome int,
   rejection_category text
 );
+alter table history_claims add column if not exists submitted_at date;
 
 create table if not exists salary_uploads (
   id uuid primary key default gen_random_uuid(),

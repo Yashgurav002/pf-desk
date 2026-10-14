@@ -1,0 +1,12 @@
+{
+  "name": "tabpfn",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "node run.mjs setup",
+    "dev": "node --env-file-if-exists=../../.env run.mjs serve",
+    "eval": "node --env-file-if-exists=../../.env run.mjs train_eval",
+    "test": "echo no tabpfn tests",
+    "typecheck": "echo no typecheck"
+  }
+}

@@ -37,6 +37,7 @@ export default function ClaimDetail() {
   const [pc, setPc] = useState<Precheck | null>(null);
   const [lang, setLang] = useState("hi");
   const [msg, setMsg] = useState<{ text: string; model: string } | null>(null);
+  const [why, setWhy] = useState<{ text: string; model: string } | null>(null);
   const [remark, setRemark] = useState("");
   const [dec, setDec] = useState<Decoded | null>(null);
   const [link, setLink] = useState<{ url: string; expires_at: string } | null>(null);
@@ -93,7 +94,7 @@ export default function ClaimDetail() {
 
       <section className="card">
         <h2 className="mt-0">Pre-check</h2>
-        <button className="btn" disabled={!!busy} onClick={() => run("pc", () => post<Precheck>(`/v1/claims/${id}/precheck`, {}), (r) => { setPc(r); load(); })}>
+        <button className="btn" disabled={!!busy} onClick={() => run("pc", () => post<Precheck>(`/v1/claims/${id}/precheck`, {}), (r) => { setPc(r); setWhy(null); load(); })}>
           Run Pre-check
         </button>
         {busy === "pc" && <Loading text="Checking records and predicting risk… (can take up to a minute)" />}
@@ -101,7 +102,7 @@ export default function ClaimDetail() {
           <div className="mt-4 space-y-3">
             <p className="text-xl">Rejection risk: <RiskBadge pct={pc.risk_pct} band={pc.risk_band} /> <span className="text-sm text-gray-600">model: {pc.risk_model}</span></p>
             {pc.eta && (
-              <p className="text-xl">Likely by <b>{pc.eta.likely_date}</b> (range {pc.eta.range[0]}–{pc.eta.range[1]}) <span className="text-sm text-gray-600">· about {pc.eta.days} days · model: {pc.eta.model}</span></p>
+              <p className="text-xl">Likely by <b>{pc.eta.likely_date}</b> (range {pc.eta.range[0]}–{pc.eta.range[1]}) <span className="text-sm text-gray-600">· about {Math.round(pc.eta.days)} days · model: {pc.eta.model}</span></p>
             )}
             {pc.issues.length === 0 ? <p className="text-lg font-semibold text-green-800">No problems found. ✓</p> : (
               <>
@@ -116,6 +117,9 @@ export default function ClaimDetail() {
                 </ol>
               </>
             )}
+            <button className="btn2" disabled={!!busy} onClick={() => run("why", () => post<{ text: string; model: string }>(`/v1/claims/${id}/explain`, {}), setWhy)}>Explain this to me</button>
+            {busy === "why" && <Loading text="Gemma is writing an explanation…" />}
+            {why && busy !== "why" && <p className="rounded bg-blue-50 p-3 text-lg">{why.text} <span className="block text-sm text-gray-600">model: {why.model} · check against the rules before acting</span></p>}
           </div>
         )}
       </section>

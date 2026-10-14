@@ -223,6 +223,10 @@ export function makeDataset(seed = 42, today = todayISO()) {
     const rejected = f.datatype.boolean({ probability: pReject });
     const office = f.helpers.arrayElement(OFFICES);
     const age = Math.floor((ref - Date.parse(e.dob_uan!)) / (365.25 * DAY));
+    // spread over ~18 months so the TabPFN eval can split by time (train older, test newer)
+    const submitted = ref - f.number.int({ min: 40, max: 540 }) * DAY;
+    const month = new Date(submitted).getUTCMonth() + 1;
+    const yearEnd = month === 3 || month === 4 ? 4 : 0; // synthetic: financial-year-end backlog
     return {
       form,
       service_months: feat.service_months as number,
@@ -236,10 +240,11 @@ export function makeDataset(seed = 42, today = todayISO()) {
       aadhaar_linked: feat.aadhaar_linked as boolean,
       exit_marked: feat.exit_marked as boolean,
       months_since_exit: feat.months_since_exit as number,
-      submit_month: f.number.int({ min: 1, max: 12 }),
+      submitted_at: iso(submitted),
+      submit_month: month,
       office_code: office,
       outcome: rejected ? 'rejected' as const : 'settled' as const,
-      days_to_outcome: Math.max(5, Math.min(35, FORM_DAYS[form] + OFFICE_DELAY[office] + f.number.int({ min: -4, max: 6 }) - (rejected ? 3 : 0))),
+      days_to_outcome: Math.max(5, Math.min(35, FORM_DAYS[form] + OFFICE_DELAY[office] + yearEnd + f.number.int({ min: -4, max: 6 }) - (rejected ? 3 : 0))),
       rejection_category: rejected ? (failed.length ? PLANT_CATEGORY[failed[0][0]] : f.helpers.arrayElement(GENERIC)) : null,
     };
   });
