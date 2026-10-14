@@ -84,6 +84,8 @@ Source of truth: `PFDESK_PRD.md`. Tick `[x]` when done **and verified**. Owner t
 - [x] T2.8 Verify end to end, tests green, commit
 - [ ] T2.11 TabPFN ETA interval is too narrow (50% p20–p80 coverage vs ~60% expected) — widen (e.g. p10–p90) after real data
 - [ ] T2.12 API mode (`TABPFN_MODE=api`) written but untested; `tabpfn-client` needs pandas<3 — **needs TabPFN API key**
+- [x] T2.13 Hinglish Excel template for dad: `docs/PF_Desk_Papa_Template.xlsx` (past claims + rejection remarks; built by `docs/make_papa_template.py`)
+- [ ] T2.14 Importer: template → `history_claims` + `remark_labels` (when dad returns it)
 - [ ] T2.9 Real history from dad's records into `history_claims` (150+ rows) — **needs dad**
 - [ ] T2.10 Dad approves a Hindi message — **needs dad**
 
