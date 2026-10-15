@@ -82,13 +82,16 @@ const authed = (c: Context) => {
   return !!p && Number(p.split(':')[1]) > Date.now();
 };
 app.get('/auth/me', (c) => (authed(c) ? c.json({ ok: true }) : c.json({ error: 'Login required' }, 401)));
+let booting = true, bootError: string | null = null;
 app.use('/v1/*', async (c, next) => {
+  if (booting) return c.json({ error: bootError ? `Server failed to start: ${bootError}` : 'PF Desk is starting up (loading demo data). Please try again in a minute.' }, 503);
   // help pages use their own link token; the voice LLM endpoint checks VOICE_SHARED_SECRET itself
   if (c.req.path.startsWith('/v1/help/') || c.req.path.startsWith('/v1/voice/') || authed(c)) return next();
   return c.json({ error: 'Login required' }, 401);
 });
 
 app.get('/health', async (c) => {
+  if (booting) return c.json({ ok: !bootError, starting: true, error: bootError }, bootError ? 500 : 200);
   const db = await query('select 1').then(() => true, () => false);
   const llm = await fetch(`${env.LLM_BASE_URL}/models`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok, () => false);
   return c.json({ ok: db, demo: DEMO, db, llm });
@@ -631,16 +634,26 @@ Rule Book entries:\n${hits.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).jo
 }
 
 // ---------- boot ----------
-await migrate();
-await seedRules();
-if (DEMO) {
-  await seedDemo();
-  // demo realism: the consultant has already run Pre-check on open claims
-  for (const { id } of await query(`select id from claims c where status in ('draft','checked') and not exists (select 1 from precheck_results p where p.claim_id = c.id)`)) await precheckClaim(id, { fast: true });
-}
-embedMissingRules().catch((err) => console.warn('embedding skipped:', err.message));
+// Listen first, then migrate/seed: on a hosted DB far away, seeding the demo takes minutes and the
+// platform's health check would otherwise kill us before we ever answer. /v1 says "starting" until ready.
 const port = Number(env.API_PORT || env.PORT || 8787);
 serve({ fetch: app.fetch, port }, () => console.log(`PF Desk API on :${port} (demo=${DEMO})`));
+try {
+  const t0 = Date.now();
+  await migrate();
+  await seedRules();
+  if (DEMO) {
+    console.log('[boot] seeding demo data…', await seedDemo());
+    // demo realism: the consultant has already run Pre-check on open claims
+    for (const { id } of await query(`select id from claims c where status in ('draft','checked') and not exists (select 1 from precheck_results p where p.claim_id = c.id)`)) await precheckClaim(id, { fast: true });
+  }
+  booting = false;
+  console.log(`[boot] ready in ${Math.round((Date.now() - t0) / 1000)}s`);
+  embedMissingRules().catch((err) => console.warn('embedding skipped:', err.message));
+} catch (err) {
+  bootError = (err as Error).message;
+  console.error('[boot] FAILED:', err);
+}
 // Temporal worker in-process: embedded PGlite is one process per data dir. With DATABASE_URL you can set
 // TEMPORAL_WORKER=off and run `pnpm --filter api worker` separately. Retries quietly while Temporal is down.
 if (env.TEMPORAL_WORKER !== 'off') import('./worker.ts').then((w) => w.runWorkerForever()).catch((err) => console.warn('[temporal] worker disabled:', err.message));

@@ -138,6 +138,25 @@ async function insert(table: string, o: Record<string, any>, cols: string[]): Pr
   return rows[0]?.id;
 }
 
+/** Multi-row insert in chunks (a hosted DB is a network round trip per statement). Rows with the same set of
+ * defined columns are batched together so column defaults still apply. Returns ids in input order. */
+async function insertMany(table: string, objs: Record<string, any>[], cols: string[]): Promise<string[]> {
+  const ids: string[] = new Array(objs.length);
+  const groups = new Map<string, number[]>();
+  objs.forEach((o, i) => { const k = pick(o, cols).join(','); groups.set(k, [...(groups.get(k) ?? []), i]); });
+  for (const [k, idx] of groups) {
+    const use = k.split(',');
+    for (let s = 0; s < idx.length; s += 100) {
+      const chunk = idx.slice(s, s + 100);
+      const vals = chunk.flatMap((i) => use.map((c) => { const v = objs[i][c]; return v !== null && typeof v === 'object' ? JSON.stringify(v) : v; }));
+      const rows = await query<{ id: string }>(
+        `insert into ${table} (${use.join(',')}) values ${chunk.map((_, r) => `(${use.map((_, j) => `$${r * use.length + j + 1}`).join(',')})`).join(',')} returning id`, vals);
+      chunk.forEach((i, r) => { ids[i] = rows[r].id; }); // ponytail: relies on VALUES ... RETURNING keeping row order (true in Postgres/PGlite)
+    }
+  }
+  return ids;
+}
+
 const EMPLOYER_COLS = ['name', 'establishment_code', 'contact_name', 'contact_phone', 'cycle_day', 'due_day'];
 const EMPLOYEE_COLS = ['name_uan', 'name_bank', 'name_aadhaar', 'father_name_uan', 'father_name_bank', 'dob_uan', 'dob_aadhaar',
   'aadhaar_last4', 'aadhaar_linked', 'pan_present', 'bank_ifsc', 'bank_verified', 'kyc_approved_by_employer',
@@ -157,21 +176,17 @@ export async function seedDemo(): Promise<Record<string, number>> {
   const employerIds: string[] = [];
   for (const e of ds.employers) employerIds.push((await insert('employers', e, EMPLOYER_COLS))!);
 
-  const employeeIds: string[] = [];
-  for (const e of ds.employees as any[]) {
-    const row = {
-      ...e,
-      aadhaar_last4: e.aadhaar_last4 ? String(e.aadhaar_last4).slice(-4) : null, // never the full number
-      employer_id: employerIds[e.employer_idx],
-      uan: enc(e.uan ?? null),
-      bank_account_enc: enc(e.bank_account ?? null),
-      phone_enc: enc(e.phone ?? null),
-    };
-    employeeIds.push((await insert('employees', row, ['employer_id', 'uan', 'bank_account_enc', 'phone_enc', ...EMPLOYEE_COLS]))!);
-  }
+  const employeeIds = await insertMany('employees', (ds.employees as any[]).map((e) => ({
+    ...e,
+    aadhaar_last4: e.aadhaar_last4 ? String(e.aadhaar_last4).slice(-4) : null, // never the full number
+    employer_id: employerIds[e.employer_idx],
+    uan: enc(e.uan ?? null),
+    bank_account_enc: enc(e.bank_account ?? null),
+    phone_enc: enc(e.phone ?? null),
+  })), ['employer_id', 'uan', 'bank_account_enc', 'phone_enc', ...EMPLOYEE_COLS]);
 
-  for (const c of ds.claims as any[]) await insert('claims', { ...c, employee_id: employeeIds[c.employee_idx] }, ['employee_id', ...CLAIM_COLS]);
-  for (const h of ds.history) await insert('history_claims', h, HISTORY_COLS);
+  await insertMany('claims', (ds.claims as any[]).map((c) => ({ ...c, employee_id: employeeIds[c.employee_idx] })), ['employee_id', ...CLAIM_COLS]);
+  await insertMany('history_claims', ds.history, HISTORY_COLS);
 
   // Last wage month's salary sheets, mixed statuses; the first employer also has the month before, so anomaly flags show.
   const d = new Date();

@@ -10,7 +10,7 @@ const api = spawn(process.execPath, [resolve(import.meta.dirname, 'index.ts')], 
   env: { ...process.env, PGLITE_DIR: 'memory://', DATABASE_URL: '', DEMO_MODE: 'true', API_PORT: String(PORT), TEMPORAL_ADDRESS: '127.0.0.1:1', TABPFN_URL: 'http://127.0.0.1:1' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
-await new Promise<void>((ok) => api.stdout!.on('data', (d) => String(d).includes('PF Desk API on') && ok()));
+await new Promise<void>((ok) => api.stdout!.on('data', (d) => String(d).includes('[boot] ready') && ok()));
 const get = async (p: string, h: Record<string, string> = {}) => (await fetch(BASE + p, { headers: h })).json() as Promise<any>;
 const post = async (p: string, body: unknown, h: Record<string, string> = {}) =>
   (await fetch(BASE + p, { method: 'POST', headers: { 'content-type': 'application/json', ...h }, body: JSON.stringify(body) })).json() as Promise<any>;
