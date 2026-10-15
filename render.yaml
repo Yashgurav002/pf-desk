@@ -22,10 +22,10 @@ services:
       - { key: PUBLIC_URL, value: "https://pfdesk.buildwithyash.tech" }
       - { key: TEMPORAL_WORKER, value: "off" }
       - { key: LLM_BASE_URL, value: "https://generativelanguage.googleapis.com/v1beta/openai" }
-      - { key: LLM_MODEL, value: "gemma-3-27b-it" }
+      - { key: LLM_MODEL, value: "gemma-4-26b-a4b-it" }
       - { key: LLM_COMPAT, value: "gemma-api" }
       - { key: LLM_API_KEY, sync: false }
-      - { key: DECODER_MODEL, value: "gemma-3-27b-it" }
+      - { key: DECODER_MODEL, value: "gemma-4-26b-a4b-it" }
       - { key: SENTRY_DSN_API, sync: false }
       - { key: ELEVENLABS_AGENT_ID, sync: false }
       - { key: VOICE_SHARED_SECRET, sync: false }
