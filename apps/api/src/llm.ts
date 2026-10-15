@@ -13,6 +13,8 @@ function headers(): Record<string, string> {
   return h;
 }
 
+let thinkingOffOk = true;
+
 export async function chat(
   messages: ChatMessage[],
   pii: Pii,
@@ -30,10 +32,20 @@ export async function chat(
   const noSystem = process.env.LLM_COMPAT === 'gemma-api';
   if (noSystem) body.messages = foldSystem(body.messages as ChatMessage[]);
   if (opts.json && !noSystem) body.response_format = { type: 'json_object' };
+  // Gemma 4 thinks by default (~40 s per answer on the free API); ask for no reasoning, and drop the
+  // parameter for good if the endpoint rejects it.
+  if (noSystem && thinkingOffOk) body.reasoning_effort = 'none';
 
   const t0 = Date.now();
   const data: any = await span(`llm.${opts.kind ?? 'chat'}`, 'gen_ai.chat', { model }, async () => {
-    const res = await fetch(url, { method: 'POST', headers: headers(), body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
+    const send = () => fetch(url, { method: 'POST', headers: headers(), body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
+    let res = await send();
+    if (res.status === 400 && body.reasoning_effort) {
+      console.warn('[llm] endpoint rejected reasoning_effort; continuing without it:', (await res.text()).slice(0, 200));
+      thinkingOffOk = false;
+      delete body.reasoning_effort;
+      res = await send();
+    }
     if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return res.json();
   });
