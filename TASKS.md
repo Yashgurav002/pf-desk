@@ -117,7 +117,8 @@ Design: fine-tuned **Qwen3-8B** (Tinker LoRA) does extraction — remark → `{c
 - [x] P4.4 Sentry tracing, env-gated (no-op without DSN) (chief)
 - [x] P4.5 ElevenLabs custom-LLM endpoint + voice widget on help page, env-gated (chief)
 - [x] P4.6 Benchmarks §20: #4 pre-check false alarms, #6 hybrid search Recall@5 (30 questions), #7 helpline correctness, #8 kill-resume 20× (chief)
-- [ ] P4.7 Render deploy + domain — **needs you** (Render account, domain)
+- [x] P4.7 Render deploy + domain: https://pfdesk.buildwithyash.tech (Render free plan, Tiger Cloud free Postgres, Gemma 4 via Google AI Studio). Verified 2026-10-15: login, Today, claims, Pre-check, explain, WhatsApp draft, decoder, help link all work.
+- [ ] P4.12 Live helpline slow on Google free tier (24–94 s; one Hindi status question misrouted as off-topic). Try a faster Gemma model or accept + record video locally.
 - [x] P4.8 Decoder taxonomy 15 → 20 categories after the public-remarks study (pension/EPS, contribution, transfer, PAN/15G, employer confirmation); retrained on Tinker (v2, v3)
 - [x] P4.9 Helpline fixes found by the benchmark: fixed reply for rejected claims, foreign-script retry, EPFO offices/staff = off-topic
 - [x] P4.10 Rejected claims also recorded into history_claims by ClaimFollowUpWorkflow (one row per claim + outcome)
@@ -129,7 +130,10 @@ Design: fine-tuned **Qwen3-8B** (Tinker LoRA) does extraction — remark → `{c
 - [x] P4 Temporal MonthlyCycle + ClaimFollowUp workflows; salary upload validation (F5)
 - [ ] P4 ElevenLabs voice helpline; Sentry tracing; Render deploy + domain
 - [x] P4 Hindi/Marathi UI label toggle
-- [ ] P5–7 Real use, benchmarks (§20), video, DEV post
+- [ ] P5 Dad tries the live demo (10 min): one Pre-check + quote + ₹499/₹999 answer — **needs you + dad**
+- [ ] P6 Demo video (3 min, record locally with `pnpm dev` for speed) — script by chief, recording **needs you**
+- [ ] P7 DEV post draft (chief) → publish + submit by Sun Oct 18 night IST (cutoff Mon Oct 19 ~12:29 PM IST) — **needs you**
+- [ ] Optional: Sentry DSN, ElevenLabs voice agent
 
 ---
 
