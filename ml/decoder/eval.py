@@ -2,6 +2,7 @@
 
     python eval.py                                   # all systems
     python eval.py --systems gemma,local --limit 40  # subset
+    python eval.py --systems base,tuned --test-file public_remarks.jsonl   # real public remarks -> evaluation/decoder_public.md
 
 Systems:
   base      Qwen3-8B zero-shot on Tinker (same prompt, no fine-tune)          needs TINKER_API_KEY
@@ -17,8 +18,20 @@ import statistics
 import time
 import urllib.request
 
-from common import BASE_MODEL, CATEGORIES, DATA, HERE, RENDERER, SYSTEM_PROMPT, jaccard, load, macro_f1, parse, target
+from common import BASE_MODEL, CATEGORIES, DATA, HERE, RENDERER, SYSTEM_PROMPT, VOCAB, jaccard, load, macro_f1, parse, target
 
+
+def as_example(r: dict) -> dict:
+    """public_remarks.jsonl row ({text, category, alt?}) -> same shape as test.jsonl examples."""
+    if "messages" in r:
+        return r
+    c = VOCAB["categories"][r["category"]]
+    gold = {"category": r["category"], "fields_involved": sorted(c["fields"]), "fix_step_ids": sorted(c["fix"])}
+    return {"messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": r["text"]},
+                         {"role": "assistant", "content": json.dumps(gold)}], "alt": r.get("alt"), "kind": r.get("kind")}
+
+LABELS = {"base": "Qwen3-8B zero-shot (Tinker)", "tuned": "Qwen3-8B + PF Desk LoRA (Tinker)", "gemma": "gemma3:4b few-shot (Ollama, laptop)",
+          "local": "Qwen3-8B Q4 + PF Desk LoRA (llama-server, laptop)"}
 SAMPLE_PRICE_PER_M = 0.60  # USD, Qwen3-8B sampling, tinker models & pricing page, Oct 2026
 OLLAMA = os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1")
 LOCAL = os.environ.get("DECODER_BASE_URL", "http://127.0.0.1:8791/v1")  # llama-server started by `pnpm dev` (run.mjs)
@@ -97,7 +110,10 @@ def score(examples: list[dict], outs: list[tuple[str, float, int]]) -> dict:
         "f1_noisy": f1(lambda ex: ex.get("aug")),
         "f1_hard": f1(lambda ex: ex.get("hard")),
         "accuracy": sum(bool(p) and p["category"] == g["category"] for p, g in zip(preds, gold)) / len(gold),
+        # ambiguous real remarks: the labeller's second choice also counts
+        "accuracy_alt_ok": sum(bool(p) and p["category"] in (g["category"], ex.get("alt")) for p, g, ex in zip(preds, gold, examples)) / len(gold),
         "json_valid": len(ok) / len(preds),
+        "schema_strict": sum(parse(o[0], strict=True) is not None for o in outs) / len(outs),
         "fields_jaccard": statistics.mean(jaccard(p["fields_involved"], g["fields_involved"]) if p else 0 for p, g in zip(preds, gold)),
         "fix_jaccard": statistics.mean(jaccard(p["fix_step_ids"], g["fix_step_ids"]) if p else 0 for p, g in zip(preds, gold)),
         "p50_latency_s": statistics.median(o[1] for o in outs),
@@ -111,13 +127,19 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--gemma-model", default=os.environ.get("LLM_MODEL", "gemma3:4b"))
     ap.add_argument("--local-model", default="pfdesk-decoder")
+    ap.add_argument("--test-file", default="test.jsonl")
+    ap.add_argument("--rescore", action="store_true", help="re-score saved pred_*.jsonl raw outputs, no model calls")
     a = ap.parse_args()
-    examples = load("test.jsonl")[: a.limit or None]
+    public = a.test_file != "test.jsonl"
+    examples = [as_example(r) for r in load(a.test_file)][: a.limit or None]
     run = json.loads((HERE / "run.json").read_text()) if (HERE / "run.json").exists() else None
     results: dict[str, dict] = {}
     for name in a.systems.split(","):
         print(f"== {name}")
-        if name == "base":
+        if a.rescore:
+            saved = [json.loads(l) for l in (DATA / f"pred_{name}{'_public' if public else ''}.jsonl").read_text(encoding="utf-8").splitlines()]
+            outs, label = [(s["raw"], s.get("latency", 0.0), s.get("tokens", 0)) for s in saved][: len(examples)], LABELS[name]
+        elif name == "base":
             outs, label = asyncio.run(run_tinker(None, examples)), "Qwen3-8B zero-shot (Tinker)"
         elif name == "tuned":
             if not run:
@@ -132,11 +154,29 @@ def main() -> None:
         r = score(examples, outs)
         r["cost_per_1k_usd"] = round(r["tokens_per_remark"] * 1000 / 1e6 * SAMPLE_PRICE_PER_M, 3) if name in ("base", "tuned") else 0.0
         results[label] = r
-        with (DATA / f"pred_{name}.jsonl").open("w", encoding="utf-8") as fh:
+        with (DATA / f"pred_{name}{'_public' if public else ''}.jsonl").open("w", encoding="utf-8") as fh:
             for ex, o in zip(examples, outs):
-                fh.write(json.dumps({"remark": ex["messages"][1]["content"], "gold": target(ex), "raw": o[0], "pred": parse(o[0])}, ensure_ascii=False) + "\n")
+                fh.write(json.dumps({"remark": ex["messages"][1]["content"], "gold": target(ex), "raw": o[0], "pred": parse(o[0]), "latency": o[1], "tokens": o[2]}, ensure_ascii=False) + "\n")
         print(json.dumps(r, indent=1))
-    write_report(results, len(examples), run)
+    (write_public_report if public else write_report)(results, len(examples), run)
+
+
+def write_public_report(results: dict[str, dict], n: int, run: dict | None) -> None:
+    out = HERE.parent.parent / "evaluation" / "decoder_public.md"
+    rows = [f"| {k} | {r['macro_f1']:.3f} | {r['accuracy']:.0%} | {r['accuracy_alt_ok']:.0%} | {r['json_valid']:.0%} | {r['schema_strict']:.0%} | {r['p50_latency_s']:.2f}s |" for k, r in results.items()]
+    prev = out.read_text(encoding="utf-8") if out.exists() else ""  # keep rows of systems not re-run
+    rows += [l for l in prev.splitlines() if l.startswith("| ") and not l.startswith("| System") and l.split(" | ")[0][2:] not in results]
+    out.write_text(f"""# Rejection Decoder on real public EPFO remarks
+
+Updated {time.strftime('%Y-%m-%d %H:%M')} · {n} remark texts that members and articles posted publicly (`ml/decoder/data/public_remarks.jsonl`, sources per row, labelled by us from the source's own explanation; see `public_remarks.md`). **Never used for training.** This is the honest out-of-distribution check: the decoder was trained only on synthetic remarks.
+
+| System | Macro-F1 | Accuracy | Accuracy (2nd label ok) | Usable JSON | Strict schema | p50 latency |
+|---|---|---|---|---|---|---|
+{chr(10).join(rows)}
+
+"Usable JSON": known category (invented field / fix-step names are dropped, as the app does). "Strict schema": no invented names at all. "2nd label ok": for remarks marked ambiguous, the labeller's alternative category also counts as correct.
+""", encoding="utf-8")
+    print("wrote", out)
 
 
 def write_report(results: dict[str, dict], n: int, run: dict | None) -> None:

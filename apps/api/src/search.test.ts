@@ -24,8 +24,18 @@ after(() => close());
 test('rules seeded, unverified, dates as strings', async () => {
   const rows = await query('select id, source, last_verified_by, params from rules');
   assert.ok(rows.length >= 20);
-  assert.ok(rows.every((r) => r.source.includes('VERIFY') && r.last_verified_by === null));
-  assert.deepEqual(rows.find((r) => r.id === 'R-WAITING-PERIOD').params, { days: 60, forms: ['19', '10C'] });
+  assert.ok(rows.every((r) => r.source && r.last_verified_by === null));
+  assert.deepEqual(rows.find((r) => r.id === 'R-WAITING-PERIOD').params, { days: { '19': 366, '10C': 1096 }, forms: ['19', '10C'] });
+
+  // re-seed refreshes unverified rules (dropping a stale embedding) but never a consultant-verified one
+  await query(`update rules set body = 'old', params = '{"days":60}' where id = 'R-WAITING-PERIOD'`);
+  await query(`update rules set body = 'dad says', last_verified_by = 'Dad' where id = 'R-DUE-DATE'`);
+  await seedRules();
+  const [w] = await query(`select body, params, embedding is null as no_vec from rules where id = 'R-WAITING-PERIOD'`);
+  assert.ok(w.body.includes('12 months') && w.params.days['19'] === 366 && w.no_vec);
+  assert.equal((await query(`select body from rules where id = 'R-DUE-DATE'`))[0].body, 'dad says');
+  await query(`update rules set last_verified_by = null where id = 'R-DUE-DATE'`);
+  await seedRules();
   const [{ d }] = await query(`select '2024-03-05'::date d`);
   assert.equal(d, '2024-03-05');
 });

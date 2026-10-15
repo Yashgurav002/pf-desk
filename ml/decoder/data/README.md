@@ -3,13 +3,13 @@
 All files are generated; rebuild with `python -I make_remarks.py && python -I build_dataset.py [--labels export.ndjson]` (stdlib only, fixed seeds, byte-identical reruns).
 
 ## Provenance
-- `remarks.jsonl`: 484 **synthetic** base remarks, no personal data. Sources: the 40 hand-written `REMARKS` from `apps/api/src/synthetic.ts`; a per-category template grammar (EPFO-style caps/abbreviations, 26 per category); 32 hand-written vague remarks → `other`; 48 multi-problem remarks. Labels: `fields_involved`/`fix_step_ids` = union of the `labels.json` defaults of every category mentioned.
+- `remarks.jsonl`: 622 **synthetic** base remarks, no personal data. Sources: the 40 hand-written `REMARKS` from `apps/api/src/synthetic.ts`; a per-category template grammar (EPFO-style caps/abbreviations, 26 per category); hand-written vague remarks → `other`; multi-problem remarks. Labels: `fields_involved`/`fix_step_ids` = union of the `labels.json` defaults of every category mentioned.
 - Consultant labels (`--labels`, label-tool ndjson export) override a synthetic row with the same normalised text (lowercase, non-alphanumerics collapsed) and keep its group; new texts become their own group.
 
 ## Counts (synthetic only)
-- Base remarks 484 = 484 groups → 339 train / 145 test groups, 25 test groups marked `hard`.
-- `train.jsonl` 1,356 examples (each base remark + 3 augmented variants, `aug:true`).
-- `test.jsonl` 290 examples = 145 clean originals + 145 light noisy copies (`aug:true`). Report scores on both (filter `aug`).
+- Base remarks 622 = 622 groups → 434 train / 188 test groups, 25 test groups marked `hard`.
+- `train.jsonl` 1,736 examples (each base remark + 3 augmented variants, `aug:true`).
+- `test.jsonl` 376 examples = 188 clean originals + 188 light noisy copies (`aug:true`). Report scores on both (filter `aug`).
 - Every category has 9–10 clean test remarks.
 
 ## Split rule
@@ -23,4 +23,10 @@ All files are generated; rebuild with `python -I make_remarks.py && python -I bu
 - `kyc_not_approved` = anything pending **approval by the employer/estt** (incl. "bank KYC not approved by employer", DSC approval). "Bank KYC not verified" (no employer) → `bank_not_verified`.
 - `duplicate_claim` = same claim already settled/submitted/under process; a previous **advance for the same purpose** is `purpose_ineligible`.
 - Name/DOB/father mismatch "with Aadhaar" stays a mismatch category, not `aadhaar_not_linked`.
-- Vague, procedural or uncovered reasons (transfer pending, ECR not filed, deceased → Form 20, PAN/TDS, "rejected as per rules") → `other` with empty lists.
+- 2026-10-15: five categories added after scoring the decoder on 148 real public remarks (`public_remarks.jsonl`, test-only), where 43% fell into `other`:
+  `pension_eps_issue` (EPS membership/eligibility, EPS remitted wrongly or after 58, wages above ceiling, para 26(6)),
+  `contribution_missing` (contribution/ECR gaps, ledger mismatch, reconciliation pending, NCP days),
+  `transfer_pending` (previous service / transfer-in pending, service overlap, multiple member IDs),
+  `tax_pan_15g` (PAN / Form 15G-15H / TDS), `employer_confirmation` (genuineness letter, high-value confirmation).
+  Their synthetic templates are our own wording; no public remark text is used for training.
+- Vague, procedural or uncovered reasons (deceased → Form 20, "rejected as per rules", technical error) → `other` with empty lists.

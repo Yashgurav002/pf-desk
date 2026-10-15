@@ -98,17 +98,37 @@ Design: fine-tuned **Qwen3-8B** (Tinker LoRA) does extraction — remark → `{c
 - [x] T3.5 `ml/decoder/eval.py` — base Qwen3-8B zero-shot vs Gemma 3 4B few-shot vs fine-tuned: macro-F1, JSON validity, p50 latency, cost/1k → `evaluation/decoder.md`
 - [x] T3.6 Export: adapter → PEFT → GGUF LoRA → llama-server on Ollama's qwen3:8b file (`ml/decoder/export.md`; Ollama 0.17 rejects LoRA)
 - [x] T3.7 API decode: fine-tuned extraction (DECODER_MODEL) + Gemma messages; Gemma few-shot fallback when the decoder isn't installed
-- [ ] T3.8 Verify end to end, tests green, commit
+- [x] T3.8 Verify end to end, tests green, commit (decoder v3 eval on Tinker; laptop llama-server row pending RAM)
 - [ ] T3.9 Dad labels 150–400 real remarks with the label tool, then retrain — **needs dad**
 - [ ] T3.10 Dad rates 20 decoded messages 1–5 — **needs dad**
 - [ ] T3.0 `TINKER_API_KEY` in `.env` — **needs you** (Tinker console → API keys)
 
+## Phase R — Research instead of dad (2026-10-15: user asked to finish without dad; merge dad's input later if available)
+- [x] R1 Verify all 25 Rule Book entries against official EPFO / Labour Ministry / PIB sources (current to Oct 2026) → `docs/research/rules.md`; seed gets per-rule `source` + corrected bodies/params (agent R-rules)
+- [x] R2 Real public EPFO rejection remarks (forums, news, EPFO FAQs; verbatim, no PII, source URL each), labelled → `ml/decoder/data/public_remarks.jsonl` (agent R-remarks)
+- [x] R3 Problem evidence + market: rejection-rate stats, settlement times, grievances, consultant fees, competitors → `docs/research/problem.md` (agent R-remarks)
+- [x] R4 Eval decoder on the real public remarks (base + tuned on Tinker, Gemma few-shot) → "real remarks" table in `evaluation/decoder.md` (chief)
+- [x] R5 Rule-driven check changes from R1 (e.g. waiting period, service thresholds) + tests (chief)
+
+## Phase 4 — no-key parts first
+- [x] P4.1 Temporal: `MonthlyCycleWorkflow` + `ClaimFollowUpWorkflow` (PRD §13), worker, signals from UI status changes, dev server via `temporal server start-dev`; falls back cleanly when Temporal is not running (agent B-temporal)
+- [x] P4.2 F5 salary sheet upload + validation (wage ceiling, split, EDLI, admin, anomalies vs last month) + Cycle page (agent B-temporal)
+- [x] P4.3 Hindi/Marathi UI label toggle (agent C-i18n)
+- [x] P4.4 Sentry tracing, env-gated (no-op without DSN) (chief)
+- [x] P4.5 ElevenLabs custom-LLM endpoint + voice widget on help page, env-gated (chief)
+- [x] P4.6 Benchmarks §20: #4 pre-check false alarms, #6 hybrid search Recall@5 (30 questions), #7 helpline correctness, #8 kill-resume 20× (chief)
+- [ ] P4.7 Render deploy + domain — **needs you** (Render account, domain)
+- [x] P4.8 Decoder taxonomy 15 → 20 categories after the public-remarks study (pension/EPS, contribution, transfer, PAN/15G, employer confirmation); retrained on Tinker (v2, v3)
+- [x] P4.9 Helpline fixes found by the benchmark: fixed reply for rejected claims, foreign-script retry, EPFO offices/staff = off-topic
+- [x] P4.10 Rejected claims also recorded into history_claims by ClaimFollowUpWorkflow (one row per claim + outcome)
+- [ ] P4.11 Voice: create the ElevenLabs agent (custom LLM → `/v1/voice/llm/chat/completions`, Bearer = VOICE_SHARED_SECRET, system prompt contains `help_token: {{help_token}}`) — **needs you** (ElevenLabs key) + a public URL
+
 ## Later phases (blocked on keys / credits / dad's input)
 - [ ] P0 Interview dad, verify Rule Book entries (§2.3, §5) — **needs dad**
 - [ ] P0 Claim promos, TabPFN key, domain — **needs you**
-- [ ] P4 Temporal MonthlyCycle + ClaimFollowUp workflows; salary upload validation (F5)
+- [x] P4 Temporal MonthlyCycle + ClaimFollowUp workflows; salary upload validation (F5)
 - [ ] P4 ElevenLabs voice helpline; Sentry tracing; Render deploy + domain
-- [ ] P4 Hindi/Marathi UI label toggle
+- [x] P4 Hindi/Marathi UI label toggle
 - [ ] P5–7 Real use, benchmarks (§20), video, DEV post
 
 ---

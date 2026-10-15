@@ -1,13 +1,13 @@
 {
-  "model_path": "tinker://4f830dbf-312a-5ee1-a853-70933a67d0ad:train:0/sampler_weights/final",
+  "model_path": "tinker://deb6174b-5c3d-53c2-922d-d3e6257ad060:train:0/sampler_weights/final",
   "base_model": "Qwen/Qwen3-8B",
   "renderer": "qwen3_disable_thinking",
   "rank": 32,
   "lr": 0.00047297908091376354,
   "epochs": 2,
   "batch": 32,
-  "train_examples": 1356,
-  "train_tokens": 896008,
-  "est_cost_usd": 0.39,
-  "finished": "2026-10-14 15:28"
+  "train_examples": 1864,
+  "train_tokens": 1470356,
+  "est_cost_usd": 0.65,
+  "finished": "2026-10-15 19:42"
 }

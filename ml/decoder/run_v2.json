@@ -1,0 +1,13 @@
+{
+  "model_path": "tinker://4e8d21ce-bbf0-595b-ab75-89b2cb82e210:train:0/sampler_weights/final",
+  "base_model": "Qwen/Qwen3-8B",
+  "renderer": "qwen3_disable_thinking",
+  "rank": 32,
+  "lr": 0.00047297908091376354,
+  "epochs": 2,
+  "batch": 32,
+  "train_examples": 1736,
+  "train_tokens": 1371050,
+  "est_cost_usd": 0.6,
+  "finished": "2026-10-15 19:32"
+}

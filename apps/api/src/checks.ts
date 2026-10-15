@@ -63,7 +63,8 @@ const DEFAULTS: Record<string, Record<string, any>> = {
   'R-NAME-MATCH': { block_below: 0.85 },
   'R-FATHER-NAME': { block_below: 0.85 },
   'R-EXIT-DATE': { forms: ['19', '10C', '13'] },
-  'R-WAITING-PERIOD': { days: 60, forms: ['19', '10C'] }, // [verify with dad]
+  // EPF Scheme 2026 para 49(2): 12 months; EPS 2026: 36 months. Days rounded up so we never say "file now" a day early.
+  'R-WAITING-PERIOD': { days: { '19': 366, '10C': 1096 }, forms: ['19', '10C'] },
   'R-DUPLICATE': { active: ['submitted', 'under_process', 'resubmitted'], settled_forms: ['19', '10C'] },
 };
 const params = (rules: Rule[], id: string) => ({ ...DEFAULTS[id], ...(rules.find((r) => r.id === id)?.params ?? {}) });
@@ -131,7 +132,7 @@ export function runChecks(emp: EmployeeFacts, claim: ClaimFacts, rules: Rule[], 
     push('R-BANK-ACCOUNT', 'ACCOUNT_INVALID', 'blocker', 'bank_account', `Bank account number has ${acc.length} characters; it should be 9 to 18 digits.`, `Recheck the account number against the cheque/passbook and correct the bank KYC.`);
 
   if (emp.bank_verified === false)
-    push('R-BANK-VERIFIED', 'BANK_NOT_VERIFIED', 'blocker', 'bank_verified', `Bank KYC is not verified yet.`, `Ask the employer to approve the bank KYC on the employer portal (and check it isn't pending with the bank).`);
+    push('R-BANK-VERIFIED', 'BANK_NOT_VERIFIED', 'blocker', 'bank_verified', `Bank KYC is not verified yet.`, `Check the bank verification status on the member portal; employer approval isn't needed since Apr 2025. If the bank rejected it, fix the details at the bank and seed it again.`);
   if (emp.kyc_approved_by_employer === false)
     push('R-KYC-EMPLOYER', 'KYC_NOT_APPROVED', 'blocker', 'kyc_approved_by_employer', `Employer hasn't approved the KYC.`, `Log in to the employer portal and approve the pending KYC for this member.`);
   if (emp.aadhaar_linked === false)
@@ -140,15 +141,17 @@ export function runChecks(emp: EmployeeFacts, claim: ClaimFacts, rules: Rule[], 
   // Exit / waiting period
   const exitRule = params(rules, 'R-EXIT-DATE');
   if ((exitRule.forms as string[]).includes(claim.form) && !emp.date_of_exit)
-    push('R-EXIT-DATE', 'EXIT_DATE_MISSING', 'blocker', 'date_of_exit', `Form ${claim.form} needs a date of exit, but none is marked.`, `Ask the employer to mark the date of exit on the employer portal (or the member can mark it after 2 months).`);
+    push('R-EXIT-DATE', 'EXIT_DATE_MISSING', 'blocker', 'date_of_exit', `Form ${claim.form} needs a date of exit, but none is marked.`, `Ask the employer to mark the date of exit on the employer portal (or the member can update the date of leaving on the member portal if the UAN is Aadhaar-verified).`);
 
   const waitRule = params(rules, 'R-WAITING-PERIOD');
-  if ((waitRule.forms as string[]).includes(claim.form) && emp.date_of_exit) {
+  const need: number | undefined = typeof waitRule.days === 'number' ? waitRule.days : waitRule.days?.[claim.form]; // number or per-form map
+  if (need && (waitRule.forms as string[]).includes(claim.form) && emp.date_of_exit) {
     const since = days(emp.date_of_exit, today);
-    if (since < waitRule.days)
+    if (since < need)
       push('R-WAITING-PERIOD', 'WAITING_PERIOD', 'blocker', 'date_of_exit',
-        `Left on ${fmt(emp.date_of_exit)}, only ${Math.max(0, since)} days ago; Form ${claim.form} needs ${waitRule.days} days after exit.`,
-        `Hold the claim until ${fmt(new Date(Date.parse(emp.date_of_exit) + waitRule.days * 86_400_000).toISOString().slice(0, 10))}, then file.`);
+        `Left on ${fmt(emp.date_of_exit)}, only ${Math.max(0, since)} days ago; Form ${claim.form} needs ${need} days (about ${Math.round(need / 30.44)} months) after exit.`,
+        `Hold the claim until ${fmt(new Date(Date.parse(emp.date_of_exit) + need * 86_400_000).toISOString().slice(0, 10))}, then file.` +
+          (claim.form === '19' ? ' If the member needs money now, up to 75% of the PF can be taken as a partial withdrawal (Form 31) [rule R-PARTIAL-WITHDRAWAL].' : ''));
   }
 
   // Duplicates

@@ -44,4 +44,42 @@ cd apps/api && pnpm export-history   # history_claims -> ml/tabpfn/history.csv
 pnpm --filter tabpfn eval            # writes evaluation/tabpfn.md
 ```
 
-The Tinker decoder, Temporal, voice and deploy are later phases in `TASKS.md`.
+## Monthly cycle (Temporal)
+
+Per employer and wage month, `MonthlyCycleWorkflow` (`apps/api/src/workflows.ts`, id `cycle-<employerId>-<YYYY-MM>`) creates tasks on the **Cycle** page: request the salary sheet (draft WhatsApp text) on `cycle_day`, chase it at `due_day - 5`, review the validation, and "Payment due today" on `due_day` until you tap **Mark paid**. Submitting a claim starts `ClaimFollowUpWorkflow` (`claim-<claimId>`): overdue vs the ETA, "Fix and resubmit" on rejection, and every settled or rejected claim becomes a new `history_claims` row (TabPFN training data grows with use).
+
+- Salary sheets (`.xlsx`/`.csv`; UAN or employee code, name, gross, Basic+DA, days worked) are validated in `salary.ts` with rates from the Rule Book params (`R-CONTRIB-SPLIT`, `R-WAGE-CEILING`, `R-EDLI`, `R-ADMIN`) and flagged against last month. Aadhaar/account columns are ignored.
+- `pnpm dev` starts `temporal server start-dev` (state in `.data/temporal.db`, UI http://localhost:8233) if the [Temporal CLI](https://docs.temporal.io/cli) is on PATH or in `.tools/`. The worker runs inside the API (PGlite is one process per data dir); with `DATABASE_URL` you can set `TEMPORAL_WORKER=off` and run `pnpm --filter api worker`.
+- Without Temporal everything still works (upload, validation, Mark paid); the API logs once and skips starts/signals.
+- `CYCLE_FAST=N` makes a cycle "day" last N seconds (demos). Kill-resume check: `cd apps/api && node src/durability.ts 20` (needs a running Temporal server) → [`evaluation/durability.md`](evaluation/durability.md).
+
+## Rejection Decoder (Tinker fine-tune)
+
+`ml/decoder`: Qwen3-8B + LoRA trained on Tinker turns an EPFO remark into `{category, fields_involved, fix_step_ids}` (20 categories, `labels.json`); Gemma then writes the hi/mr/en employee messages. On the laptop it runs as Ollama's `qwen3:8b` file + the LoRA under llama-server (`export.py`, [`export.md`](ml/decoder/export.md)); without it the API falls back to Gemma few-shot.
+Evaluated on a synthetic test set ([`evaluation/decoder.md`](evaluation/decoder.md)) **and** on 148 real remarks members posted publicly, never used for training ([`evaluation/decoder_public.md`](evaluation/decoder_public.md)).
+
+## Rules and research
+
+Every Rule Book entry carries its source; they were checked against EPFO / PIB / gazette sources as of Oct 2026, including the EPF Scheme, 2026 and the ₹25,000 wage ceiling ([`docs/research/rules.md`](docs/research/rules.md)). Problem and market evidence: [`docs/research/problem.md`](docs/research/problem.md). Unverified rules say so; the consultant can mark a rule verified in the Rule Book, and re-seeding never overwrites a verified rule.
+
+## Employee helpline (text + voice)
+
+`/help/<token>` links (signed, 30 days) answer status and document questions from the claim facts, ETA and Rule Book only; anything else, and any rejected claim, goes to the consultant as a task. Voice is optional: create an ElevenLabs agent with **Custom LLM** = `<API_URL>/v1/voice/llm/chat/completions` (needs a public URL), secret = `VOICE_SHARED_SECRET`, and put `help_token: {{help_token}}` in its system prompt; set `ELEVENLABS_AGENT_ID` and the help page shows the voice widget.
+
+## Observability
+
+Set `SENTRY_DSN_API` to trace every model call (`llm.<kind>` spans) and TabPFN call, and capture API errors. Only metadata is sent (kind, model, timings, counts), never prompts, answers or identifiers.
+
+## Benchmarks (PRD §20)
+
+| # | What | Result | Command |
+|---|---|---|---|
+| 1–2 | Rejection risk + ETA (TabPFN vs baselines) | [`evaluation/tabpfn.md`](evaluation/tabpfn.md) | `pnpm --filter tabpfn eval` |
+| 3 | Rejection Decoder | [`decoder.md`](evaluation/decoder.md), [`decoder_public.md`](evaluation/decoder_public.md) | `ml/decoder: python eval.py` |
+| 4 | Pre-check recall / false alarms | [`evaluation/precheck.md`](evaluation/precheck.md) | `pnpm --filter api bench:checks` |
+| 5 | PII red-team (200 strings) | `apps/api/src/pii.test.ts` | `pnpm test` |
+| 6 | Rule Book search Recall@5 | [`evaluation/search.md`](evaluation/search.md) | `pnpm --filter api bench:search` |
+| 7 | Helpline | [`evaluation/helpline.md`](evaluation/helpline.md) | `pnpm --filter api bench:helpline` |
+| 8 | Kill-resume durability | [`evaluation/durability.md`](evaluation/durability.md) | `cd apps/api && node src/durability.ts 20` |
+
+Deploy (Render + domain) is in `TASKS.md`.

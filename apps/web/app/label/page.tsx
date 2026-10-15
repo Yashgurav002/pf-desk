@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, post, fmtDate, type Rule } from "@/lib/api";
 import { ErrorBox, Loading } from "@/lib/ui";
+import { useT } from "@/lib/i18n";
 
 type Vocab = { categories: Record<string, { fields: string[]; fix: string[] }>; fields: string[] };
 type Row = { id: string; text: string; category: string; fields_involved: string[]; fix_step_ids: string[]; source: string; labelled_by: string | null; created_at: string };
@@ -12,18 +13,22 @@ const CAT_LABEL: Record<string, string> = {
   bank_details_invalid: "Bank account / IFSC wrong", bank_not_verified: "Bank not verified", cheque_image_unclear: "Cheque / passbook image unclear",
   kyc_not_approved: "KYC not approved by employer", aadhaar_not_linked: "Aadhaar not linked", exit_date_missing: "Date of exit missing",
   service_ineligible: "Not enough service", waiting_period: "Waiting period not over", purpose_ineligible: "Purpose not allowed (advance)",
-  duplicate_claim: "Duplicate claim", signature_or_photo: "Signature or photo problem", other: "Other",
+  duplicate_claim: "Duplicate claim", signature_or_photo: "Signature or photo problem", pension_eps_issue: "Pension (EPS) problem",
+  contribution_missing: "Contribution missing / not reconciled", transfer_pending: "Previous service / transfer pending",
+  tax_pan_15g: "PAN / Form 15G / TDS", employer_confirmation: "Employer confirmation needed", other: "Other",
 };
 const FIELD_LABEL: Record<string, string> = {
   name: "Name", father_name: "Father's name", dob: "Date of birth", bank_account: "Bank account", ifsc: "IFSC", cheque_image: "Cheque image",
   kyc: "KYC", aadhaar: "Aadhaar", date_of_exit: "Date of exit", service_period: "Service period", purpose: "Purpose", claim: "Claim",
-  signature: "Signature", photo: "Photo",
+  signature: "Signature", photo: "Photo", pension: "Pension (EPS)", contribution: "Contribution", previous_service: "Previous service",
+  pan: "PAN / 15G", employer_letter: "Employer letter",
 };
 const nice = (k: string, m: Record<string, string>) => m[k] ?? k.replace(/_/g, " ");
 const NAME_KEY = "pfd.labelledBy";
 const toggle = (xs: string[], x: string) => (xs.includes(x) ? xs.filter((y) => y !== x) : [...xs, x]);
 
 export default function Label() {
+  const { t } = useT();
   const [vocab, setVocab] = useState<Vocab | null>(null);
   const [rules, setRules] = useState<Record<string, string>>({});
   const [queue, setQueue] = useState<{ text: string; claim_count: number }[] | null>(null);
@@ -79,7 +84,7 @@ export default function Label() {
     try {
       await post("/v1/labels", { text, category: cat, fields_involved: fields, fix_step_ids: fix, labelled_by: by.trim() || undefined });
       select(queue?.find((q) => q.text !== text)?.text ?? "");
-      setMsg("Saved ✓");
+      setMsg(t("saved"));
       await load();
     } catch (err: any) { setError(err.message); } finally { setBusy(false); }
   }
@@ -103,35 +108,35 @@ export default function Label() {
 
   return (
     <div className="space-y-6 text-lg">
-      <h1>Label rejection remarks</h1>
+      <h1>{t("labelTitle")}</h1>
       <p className="rounded-lg border-2 border-amber-500 bg-amber-50 p-3 font-semibold">
-        Don&apos;t include names, UAN, Aadhaar or bank numbers — remarks only.
+        {t("noPii")}
       </p>
       <ErrorBox error={error} />
       {msg && <p className="font-semibold text-green-800">{msg}</p>}
 
       <section className="grid gap-6 md:grid-cols-2">
         <div className="space-y-3">
-          <h2 className="mt-0">Remarks waiting for a label</h2>
-          {!queue ? <Loading /> : queue.length === 0 ? <p className="text-gray-700">None waiting. Type one below.</p> : (
+          <h2 className="mt-0">{t("waitingRemarks")}</h2>
+          {!queue ? <Loading /> : queue.length === 0 ? <p className="text-gray-700">{t("noneWaiting")}</p> : (
             <ul className="max-h-96 space-y-2 overflow-y-auto">
               {queue.map((q) => (
                 <li key={q.text}>
                   <button className={`card w-full text-left ${q.text === text ? "border-blue-700 bg-blue-50" : "hover:bg-gray-50"}`} onClick={() => select(q.text)}>
-                    {q.text} <span className="text-base text-gray-600">· {q.claim_count} claim{q.claim_count === 1 ? "" : "s"}</span>
+                    {q.text} <span className="text-base text-gray-600">· {t("claimCount", { n: q.claim_count })}</span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-          <label className="block font-semibold">Or type / paste a remark from the portal
+          <label className="block font-semibold">{t("orType")}
             <textarea className="inp mt-1 h-28" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. FATHER NAME NOT MATCHING WITH UAN" />
           </label>
         </div>
 
         <form onSubmit={save} className="card space-y-4 bg-gray-50">
-          <h2 className="mt-0">What is the reason?</h2>
-          {!text.trim() ? <p className="text-gray-700">Pick a remark (or type one) first.</p> : <p className="break-words rounded bg-white p-2 font-mono">{text}</p>}
+          <h2 className="mt-0">{t("whatReason")}</h2>
+          {!text.trim() ? <p className="text-gray-700">{t("pickFirst")}</p> : <p className="break-words rounded bg-white p-2 font-mono">{text}</p>}
           <fieldset className="grid gap-2">
             <legend className="sr-only">Reason</legend>
             {cats.map((c, i) => (
@@ -144,7 +149,7 @@ export default function Label() {
           {cat && (
             <>
               <fieldset>
-                <legend className="font-bold">Fields involved</legend>
+                <legend className="font-bold">{t("fieldsInvolved")}</legend>
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
                   {vocab.fields.map((f) => (
                     <label key={f} className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={fields.includes(f)} onChange={() => setFields(toggle(fields, f))} />{nice(f, FIELD_LABEL)}</label>
@@ -152,7 +157,7 @@ export default function Label() {
                 </div>
               </fieldset>
               <fieldset>
-                <legend className="font-bold">Fix steps (Rule Book)</legend>
+                <legend className="font-bold">{t("fixSteps")} ({t("rules")})</legend>
                 {fixIds.map((id) => (
                   <label key={id} className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={fix.includes(id)} onChange={() => setFix(toggle(fix, id))} />
                     <code className="rounded bg-gray-200 px-1 text-base">{id}</code> {rules[id] ?? ""}
@@ -161,15 +166,15 @@ export default function Label() {
               </fieldset>
             </>
           )}
-          <label className="block font-semibold">Labelled by<input className="inp mt-1" value={by} onChange={(e) => setBy(e.target.value)} placeholder="Your name" /></label>
-          <button className="btn w-full text-xl" disabled={busy || !cat || !text.trim()}>{busy ? "Saving…" : "Save → next"}</button>
+          <label className="block font-semibold">{t("labelledBy")}<input className="inp mt-1" value={by} onChange={(e) => setBy(e.target.value)} placeholder={t("yourName")} /></label>
+          <button className="btn w-full text-xl" disabled={busy || !cat || !text.trim()}>{busy ? t("saving") : t("saveNext")}</button>
         </form>
       </section>
 
       <section className="space-y-3">
         {!data ? <Loading /> : (
           <>
-            <h2>{data.total} labelled — aim for 150+</h2>
+            <h2>{t("labelledCount", { n: data.total })}</h2>
             <div className="h-4 w-full overflow-hidden rounded-full bg-gray-200"><div className="h-full bg-green-700" style={{ width: `${Math.min(100, (data.total / 150) * 100)}%` }} /></div>
             <ul className="flex flex-wrap gap-2">
               {cats.map((c) => <li key={c} className="rounded-full border-2 border-gray-300 px-3 py-1">{nice(c, CAT_LABEL)}: <b>{data.counts[c] ?? 0}</b></li>)}
@@ -190,7 +195,7 @@ export default function Label() {
                       {` · ${l.labelled_by ?? l.source} · ${fmtDate(l.created_at)}`}
                     </p>
                   </div>
-                  <button className="btn2" onClick={() => del(l.id)}>Delete</button>
+                  <button className="btn2" onClick={() => del(l.id)}>{t("del")}</button>
                 </li>
               ))}
             </ul>

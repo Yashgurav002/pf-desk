@@ -2,6 +2,7 @@
 import { Faker, en_IN, en } from '@faker-js/faker';
 import { features, nameScore } from './checks.ts';
 import type { EmployeeFacts } from './checks.ts';
+import type { SalaryRow } from './salary.ts';
 
 export const ERROR_KINDS = ['name_mismatch', 'father_name_mismatch', 'dob_mismatch', 'bank_not_verified', 'kyc_not_approved', 'aadhaar_not_linked', 'ifsc_invalid', 'exit_date_missing'] as const;
 export type ErrorKind = typeof ERROR_KINDS[number];
@@ -55,6 +56,11 @@ export const REMARKS: { text: string; category: string }[] = [
   { text: 'SAME CLAIM ALREADY SUBMITTED - REJECTED AS DUPLICATE', category: 'duplicate_claim' },
   { text: 'SIGNATURE NOT MATCHING', category: 'signature_or_photo' },
   { text: 'Photo not clear / signature missing on form', category: 'signature_or_photo' },
+  { text: 'EPS REMITTED FOR NON EPS MEMBER. ESTT TO CLARIFY', category: 'pension_eps_issue' },
+  { text: 'CONTRIBUTION NOT RECEIVED FOR LAST 3 MONTHS, ECR PENDING', category: 'contribution_missing' },
+  { text: 'TRANSFER-IN FROM PREVIOUS MEMBER ID PENDING', category: 'transfer_pending' },
+  { text: 'SERVICE BELOW 5 YRS: FORM 15G / PAN NOT SUBMITTED, TDS APPLICABLE', category: 'tax_pan_15g' },
+  { text: 'HIGH VALUE CLAIM - GENUINENESS LETTER FROM EMPLOYER REQUIRED', category: 'employer_confirmation' },
   { text: 'MEMBER DETAILS NOT FOUND, CONTACT ESTT', category: 'other' },
   { text: 'Rejected. Refer to estt for clarification', category: 'other' },
   { text: 'PL SUBMIT FRESH CLAIM WITH CORRECT DETAILS', category: 'other' },
@@ -252,3 +258,22 @@ export function makeDataset(seed = 42, today = todayISO()) {
   return { employers, employees, claims, history };
 }
 
+
+/** Two consecutive months of a small employer's salary sheet (rows as parseSalarySheet returns them), with anomalies planted
+ *  in month 2: a wage jump, a leaver, a missing employee, a new joiner, wages above the ceiling (no option), and zero wages. */
+export function makeSalaryMonths(seed = 7, n = 12): [SalaryRow[], SalaryRow[]] {
+  const f = newFaker(seed);
+  const prev: SalaryRow[] = Array.from({ length: n }, (_, i) => {
+    const code = `E${String(i + 1).padStart(3, '0')}`, basic = f.number.int({ min: 9, max: 14 }) * 1000;
+    return { key: `code:${code}`, emp_code: code, uan_masked: 'XXXXXXXX' + f.string.numeric(4), name: `${f.person.firstName()} ${f.person.lastName()}`,
+      gross: Math.round(basic * 1.4), epf_wages: basic, days: f.number.int({ min: 24, max: 26 }), exit_date: null, opted_higher: false };
+  });
+  const cur = prev.slice(0, n - 1).map((r) => ({ ...r, days: f.number.int({ min: 24, max: 26 }) })); // last one missing
+  cur[0] = { ...cur[0], epf_wages: Math.round(cur[0].epf_wages! * 1.45), gross: Math.round(cur[0].gross! * 1.45) }; // wage jump
+  cur[1] = { ...cur[1], days: 12, exit_date: '2026-09-14' };                                                // leaver
+  cur[2] = { ...cur[2], epf_wages: 30000, gross: 40000 };                                                    // above ceiling, wage jump
+  cur[3] = { ...cur[3], epf_wages: 0, gross: 0, days: 0 };                                                   // zero
+  cur.push({ key: 'code:E901', emp_code: 'E901', uan_masked: 'XXXXXXXX' + f.string.numeric(4), name: `${f.person.firstName()} ${f.person.lastName()}`,
+    gross: 14000, epf_wages: 10000, days: 18, exit_date: null, opted_higher: false });                       // new joiner
+  return [prev, cur];
+}

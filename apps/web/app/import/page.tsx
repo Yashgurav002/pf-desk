@@ -2,11 +2,13 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { ErrorBox, Loading } from "@/lib/ui";
+import { useT } from "@/lib/i18n";
 
 type Preview = { headers: string[]; rows: string[][]; suggested: Record<string, string>; fields: string[] };
 type Result = { inserted: number; skipped: number; aadhaar_dropped: number };
 
 export default function Import() {
+  const { t } = useT();
   const [employers, setEmployers] = useState<{ id: string; name: string }[]>([]);
   const [employer, setEmployer] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -44,35 +46,35 @@ export default function Import() {
 
   return (
     <div className="space-y-4">
-      <h1>Import employees</h1>
-      <p className="rounded-lg border-2 border-blue-700 bg-blue-50 p-3">Full Aadhaar numbers are dropped on import; only the last 4 digits are kept.</p>
+      <h1>{t("importTitle")}</h1>
+      <p className="rounded-lg border-2 border-blue-700 bg-blue-50 p-3">{t("aadhaarNote")}</p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="font-semibold">Employer
+        <label className="font-semibold">{t("employer")}
           <select className="inp mt-1" value={employer} onChange={(e) => setEmployer(e.target.value)}>
-            <option value="">Choose employer…</option>
+            <option value="">{t("chooseEmployer")}</option>
             {employers.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
         </label>
-        <label className="font-semibold">Excel or CSV file
+        <label className="font-semibold">{t("fileLabel")}
           <input type="file" accept=".xlsx,.csv" className="inp mt-1" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPv(null); setResult(null); }} />
         </label>
       </div>
-      <button className="btn" disabled={!file || !!busy} onClick={preview}>Preview</button>
-      {busy === "pv" && <Loading text="Reading file…" />}
+      <button className="btn" disabled={!file || !!busy} onClick={preview}>{t("preview")}</button>
+      {busy === "pv" && <Loading text={t("readingFile")} />}
       <ErrorBox error={error} />
 
       {pv && (
         <>
-          <h2>Match columns</h2>
+          <h2>{t("matchColumns")}</h2>
           <table className="w-full border-collapse">
-            <thead><tr className="border-b-2 border-gray-800 text-left"><th className="py-2">Column in your file</th><th>PF Desk field</th></tr></thead>
+            <thead><tr className="border-b-2 border-gray-800 text-left"><th className="py-2">{t("colInFile")}</th><th>{t("pfField")}</th></tr></thead>
             <tbody>
               {pv.headers.map((h) => (
                 <tr key={h} className="border-b border-gray-300">
                   <td className="py-2 pr-3 font-semibold">{h}</td>
                   <td>
                     <select className="inp" value={mapping[h] ?? ""} onChange={(e) => setMapping({ ...mapping, [h]: e.target.value })}>
-                      <option value="">— skip —</option>
+                      <option value="">{t("skip")}</option>
                       {pv.fields.map((f) => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </td>
@@ -81,7 +83,7 @@ export default function Import() {
             </tbody>
           </table>
 
-          <h2>First 5 rows</h2>
+          <h2>{t("first5")}</h2>
           <div className="overflow-x-auto">
             <table className="border-collapse text-base">
               <thead><tr>{pv.headers.map((h) => <th key={h} className="border border-gray-400 bg-gray-100 px-2 py-1 text-left">{mapping[h] || <s>{h}</s>}</th>)}</tr></thead>
@@ -93,14 +95,14 @@ export default function Import() {
             </table>
           </div>
 
-          <button className="btn" disabled={!employer || !!busy} onClick={doImport}>{employer ? "Import" : "Choose an employer first"}</button>
-          {busy === "imp" && <Loading text="Importing…" />}
+          <button className="btn" disabled={!employer || !!busy} onClick={doImport}>{employer ? t("importBtn") : t("chooseEmployerFirst")}</button>
+          {busy === "imp" && <Loading text={t("importing")} />}
         </>
       )}
 
       {result && (
         <div className="card border-green-700 bg-green-50 text-lg">
-          <p><b>{result.inserted}</b> employees imported · <b>{result.skipped}</b> rows skipped · <b>{result.aadhaar_dropped}</b> full Aadhaar numbers dropped</p>
+          <p className="font-semibold">{t("imported", { n: result.inserted })} · {t("rowsSkipped", { n: result.skipped })} · {t("aadhaarDropped", { n: result.aadhaar_dropped })}</p>
         </div>
       )}
     </div>

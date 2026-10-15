@@ -10,7 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 LABELS = json.loads((HERE / "labels.json").read_text(encoding="utf-8"))["categories"]
 rng = random.Random(42)
-PER_CATEGORY = 26  # template remarks per category (plus originals + multi-problem)
+PER_CATEGORY = 28  # template remarks per category (plus originals + multi-problem)
 
 # (a) copied verbatim from apps/api/src/synthetic.ts REMARKS
 ORIGINAL = [
@@ -133,6 +133,9 @@ G = {
         "PURPOSE NOT ADMISSIBLE{SFX}", "ADVANCE FOR {P} NOT ADMISSIBLE{SFX}", "{DOC} FOR {P} NOT ATTACHED",
         "{P} ADVANCE: {DOC} NOT ENCLOSED{SFX}", "INCORRECT PARA SELECTED FOR {P} ADVANCE", "PURPOSE OF ADVANCE NOT COVERED{SFX}",
         "MAX NO. OF ADVANCES FOR {P} ALREADY AVAILED", "AMOUNT CLAIMED EXCEEDS LIMIT FOR {P}",
+        # v3: wrong para / wrong form for the situation
+        "NOT ELIGIBLE UNDER THIS PARA, APPLY UNDER CORRECT PARA{SFX}", "{DOE} ALREADY MARKED, APPLY FINAL SETTLEMENT NOT ADVANCE",
+        "ESTT IS FUNCTIONING, ADVANCE UNDER THIS PARA NOT ADMISSIBLE", "MEMBER HAS LEFT SERVICE, SUBMIT FORM 19 / TRANSFER INSTEAD",
     ]),
     "duplicate_claim": ({"C": ["CLAIM", "FORM 19 CLAIM", "FORM 10C CLAIM", "FORM 31 CLAIM", "PF CLAIM", "FINAL SETTLEMENT"]}, [
         "{C} ALREADY SETTLED{SFX}", "DUPLICATE {C}{SFX}", "EARLIER {C} UNDER PROCESS", "SAME {C} ALREADY SUBMITTED",
@@ -145,16 +148,42 @@ G = {
         "{SG} NOT LEGIBLE{SFX}", "{PH} NOT UPLOADED", "{SG} DIFFERS FROM RECORDS", "FORM NOT SIGNED, {PH} ALSO MISSING",
         "{PH} NOT ATTESTED BY ESTT",
     ]),
+    # added 2026-10-15 after the public-remarks study (43% of real remarks fit none of the first 15); own wording, not copied
+    "pension_eps_issue": ({"E": ["EPS", "PENSION", "PENSION FUND", "EPS SHARE", "PENSION CONTRIBUTION"]}, [
+        "MEMBER NOT ELIGIBLE FOR {E} AS JOINED AFTER 09/2014 WITH WAGES ABOVE 15000{SFX}", "{E} REMITTED FOR NON EPS MEMBER{SFX}",
+        "{E} DEDUCTED AFTER AGE 58, CLARIFY{SFX}", "{E} SERVICE DETAILS NOT AVAILABLE{SFX}", "{E} WAGES EXCEED CEILING WITHOUT JOINT OPTION",
+        "EXCESS {E} REMITTED, ESTT TO REVISE{SFX}", "{E} NOT REMITTED FOR EPS MEMBER{SFX}", "CLARIFY {E} MEMBERSHIP{SFX}",
+        "{E} PART SHOWN IN EMPLOYER SHARE{SFX}",
+    ]),
+    "contribution_missing": ({"C": ["CONTRIBUTION", "CONT", "CONTRI", "PF CONTRIBUTION", "ECR"]}, [
+        "{C} NOT RECEIVED FOR SOME MONTHS{SFX}", "{C} GAP BETWEEN DOJ AND {DOE}{SFX}", "{C} NOT RECONCILED{SFX}",
+        "{C} PENDING RECONCILIATION, APPLY LATER", "LAST {C} NOT RECEIVED FROM ESTT", "{C} DETAILS MISMATCH IN LEDGER{SFX}",
+        "{C} RECEIVED ONLY UPTO PREVIOUS YEAR{SFX}", "NCP DAYS NOT GIVEN, {C} IRREGULAR", "EE/ER {C} DIFFER{SFX}",
+        # v3: reconciliation / ECR revision wording
+        "CLAIM ON HOLD TILL {C} RECONCILATION", "{C} REVISION UNDER PROCESS, APPLY AFTERWARDS", "LEDGER NOT UPDATED, {C} RECONCILIATION AWAITED",
+        "LAST WAGES NOT AVAILABLE, {C} NOT POSTED",
+    ]),
+    "transfer_pending": ({"T": ["TRANSFER", "TRANSFER-IN", "PREVIOUS SERVICE", "PREV MEMBER ID", "OLD PF A/C"]}, [
+        "{T} PENDING{SFX}", "{T} NOT YET RECEIVED{SFX}", "SETTLE {T} FIRST THEN APPLY", "{T} OVERLAPS PRESENT SERVICE",
+        "MULTIPLE MEMBER IDS, COMPLETE {T}{SFX}", "{T} PENDING AT OTHER REGIONAL OFFICE", "SERVICE OVERLAP WITH {T}{SFX}",
+        "{T} DETAILS TO BE VERIFIED{SFX}",
+    ]),
+    "tax_pan_15g": ({"X": ["FORM 15G", "15G/15H", "FORM 15H", "PAN", "PAN CARD"]}, [
+        "{X} NOT SUBMITTED, TDS APPLICABLE", "SERVICE BELOW 5 YRS, SUBMIT {X}{SFX}", "{X} NOT FURNISHED{SFX}",
+        "UPLOAD {X} TO AVOID TDS", "{X} REQUIRED AS AMOUNT ABOVE 50000{SFX}", "{X} INVALID / NOT SEEDED{SFX}",
+        "TDS TO BE DEDUCTED, {X} MISSING",
+    ]),
+    "employer_confirmation": ({"L": ["GENUINENESS LETTER", "EMPLOYER CONFIRMATION", "CONFIRMATION FROM ESTT", "EMPLOYER CERTIFICATE"]}, [
+        "{L} REQUIRED{SFX}", "HIGH VALUE CLAIM, {L} AWAITED", "{L} NOT RECEIVED{SFX}", "SUBMIT {L} AND RESUBMIT",
+        "CLAIM ON HOLD FOR {L}", "{L} PENDING FROM EMPLOYER{SFX}",
+    ]),
 }
 
 # hand-written vague / unusual remarks -> other
 OTHER = [
     "REJECTED AS PER RULES", "CONTACT REGIONAL OFFICE", "RETURNED - OTHERS", "NOT AS PER GUIDELINES",
     "CLAIM REJECTED: OTHERS", "System error, pl resubmit", "AS PER RO DIRECTION", "Under scrutiny, reasons to follow",
-    "PF A/C TRANSFER PENDING FROM PREVIOUS ESTT", "MULTIPLE MEMBER IDS, GET TRANSFERRED FIRST",
-    "PREVIOUS SERVICE NOT TRANSFERRED", "ECR NOT FILED BY ESTT FOR LAST WAGE MONTH", "CONTRIBUTION NOT RECEIVED",
-    "MEMBER ID NOT FOUND", "ESTT CODE NOT ACTIVE", "Mbr deceased, settle thru form 20", "FORM 15G/15H NOT ATTACHED",
-    "PAN NOT SEEDED, TDS APPLICABLE", "MOBILE NO NOT ACTIVE IN UAN", "INCOMPLETE CLAIM",
+    "MEMBER ID NOT FOUND", "ESTT CODE NOT ACTIVE", "Mbr deceased, settle thru form 20", "MOBILE NO NOT ACTIVE IN UAN", "INCOMPLETE CLAIM",
     "Details incomplete pl check and resubmit", "Rejected - see remarks", "OTHERS", "CLAIM NOT IN ORDER",
     "ESTT UNDER INQUIRY, CLAIM ON HOLD", "MEMBER ID MAPPED TO WRONG UAN", "Return to member for correction",
     "NIL BALANCE IN A/C", "INTEREST NOT UPDATED IN PASSBOOK, RESUBMIT LATER", "PENSION ALREADY COMMENCED",
@@ -177,6 +206,11 @@ SHORT = {
     "purpose_ineligible": ["PURPOSE NOT ADMISSIBLE", "DOCS FOR PURPOSE NOT ATTACHED", "ADVANCE PURPOSE NOT COVERED"],
     "duplicate_claim": ["CLAIM ALREADY SETTLED", "DUPLICATE CLAIM", "EARLIER CLAIM UNDER PROCESS"],
     "signature_or_photo": ["SIGNATURE NOT MATCHING", "PHOTO NOT CLEAR", "SIGN MISSING ON FORM"],
+    "pension_eps_issue": ["NOT AN EPS MEMBER", "EPS REMITTED WRONGLY", "PENSION SHARE CLARIFY"],
+    "contribution_missing": ["CONT NOT RECEIVED", "CONTRIBUTION GAP", "ECR NOT RECONCILED"],
+    "transfer_pending": ["TRANSFER-IN PENDING", "PREV SERVICE NOT TRANSFERRED", "SERVICE OVERLAP"],
+    "tax_pan_15g": ["FORM 15G NOT SUBMITTED", "PAN NOT FURNISHED", "TDS APPLICABLE, PAN MISSING"],
+    "employer_confirmation": ["GENUINENESS LETTER REQUIRED", "EMPLOYER CONFIRMATION AWAITED", "ESTT CONFIRMATION PENDING"],
 }
 JOIN = [" & ", ", ", " AND ", "; ALSO ", ". ", " / ", " + "]
 FUSED = [  # hand-written fused multi-problem remarks: (text, main, extra categories)
@@ -189,7 +223,7 @@ FUSED = [  # hand-written fused multi-problem remarks: (text, main, extra catego
 ]
 
 KEEP_UPPER = {"UAN", "IFSC", "KYC", "DOB", "DOE", "DOL", "PAN", "UIDAI", "EPFO", "JD", "NEFT", "DSC", "RO", "ID", "IDS",
-              "UID", "PF", "SB", "A/C", "F/H", "TDS"}
+              "UID", "PF", "SB", "A/C", "F/H", "TDS", "EPS", "ECR", "NCP", "EE/ER", "DOJ"}
 
 
 def style(text):

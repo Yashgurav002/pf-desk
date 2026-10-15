@@ -6,6 +6,7 @@ import { ERROR_KINDS, makeEmployee, makeDataset } from './synthetic.ts';
 import type { ErrorKind } from './synthetic.ts';
 
 const TODAY = '2026-10-13';
+const AFTER_WAIT = '2028-10-13'; // synthetic exits are 70–700 days before TODAY, so all are past the 12-month Form 19 wait by then
 const RULES: Rule[] = [{ id: 'R-NAME-MATCH', title: 'Name match', params: { block_below: 0.85 } }];
 const EXPECT: Record<ErrorKind, string> = {
   name_mismatch: 'R-NAME-MATCH', father_name_mismatch: 'R-FATHER-NAME', dob_mismatch: 'R-DOB',
@@ -33,7 +34,7 @@ test('20 planted-error cases are all caught with correct severity', () => {
   assert.equal(cases.length, 20);
   cases.forEach((planted, i) => {
     const e = makeEmployee(planted, 100 + i, TODAY);
-    const issues = runChecks(e, { form: '19' }, RULES, [], TODAY);
+    const issues = runChecks(e, { form: '19' }, RULES, [], AFTER_WAIT);
     for (const k of planted) {
       const hit = issues.find((x) => x.rule_id === EXPECT[k]);
       assert.ok(hit, `case ${i}: ${k} not caught; issues=${JSON.stringify(issues)}`);
@@ -53,7 +54,7 @@ test('20 planted-error cases are all caught with correct severity', () => {
 
 test('clean employees produce no issues', () => {
   for (let s = 0; s < 50; s++) {
-    const issues = runChecks(makeEmployee([], 500 + s, TODAY), { form: '19' }, [], [], TODAY);
+    const issues = runChecks(makeEmployee([], 500 + s, TODAY), { form: '19' }, [], [], AFTER_WAIT);
     assert.deepEqual(issues, [], JSON.stringify(issues));
   }
 });
@@ -70,6 +71,11 @@ test('waiting period, duplicates, missing bank, rule params', () => {
   assert.ok(runChecks(e, { form: '19' }, [], [], TODAY).some((x) => x.rule_id === 'R-WAITING-PERIOD'));
   assert.ok(!runChecks(e, { form: '19' }, [{ id: 'R-WAITING-PERIOD', title: '', params: { days: 30 } }], [], TODAY).some((x) => x.rule_id === 'R-WAITING-PERIOD'));
   assert.ok(!runChecks(e, { form: '31' }, [], [], TODAY).some((x) => x.rule_id === 'R-WAITING-PERIOD'));
+  // 2026 schemes: Form 19 waits 12 months, Form 10C 36 months
+  const wait = (form: string, exit: string) => runChecks({ ...e, date_of_exit: exit }, { form }, [], [], TODAY).some((x) => x.rule_id === 'R-WAITING-PERIOD');
+  assert.ok(wait('19', '2025-11-01') && !wait('19', '2025-10-01'));
+  assert.ok(wait('10C', '2024-01-01') && !wait('10C', '2023-10-01'));
+  assert.ok(!wait('13', '2026-10-01'));
 
   const ok = makeEmployee([], 3, TODAY);
   const dupe = (others: { id?: string; form: string; status?: string }[]) => runChecks(ok, { id: 'a', form: '19' }, [], others, TODAY).some((x) => x.rule_id === 'R-DUPLICATE');
@@ -79,7 +85,7 @@ test('waiting period, duplicates, missing bank, rule params', () => {
   assert.ok(!dupe([{ id: 'a', form: '19', status: 'submitted' }]));
   assert.ok(!dupe([{ id: 'b', form: '31', status: 'submitted' }]));
 
-  const missing = runChecks({ ...ok, bank_account: null, bank_ifsc: null, dob_aadhaar: null, name_bank: null }, { form: '19' }, [], [], TODAY);
+  const missing = runChecks({ ...ok, bank_account: null, bank_ifsc: null, dob_aadhaar: null, name_bank: null }, { form: '19' }, [], [], AFTER_WAIT);
   assert.deepEqual(missing.map((x) => x.code).sort(), ['ACCOUNT_MISSING', 'IFSC_MISSING']);
 });
 

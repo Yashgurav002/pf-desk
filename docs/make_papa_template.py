@@ -27,6 +27,11 @@ REASONS = {
     "Advance ka purpose / limit sahi nahi": "purpose_ineligible",
     "Claim pehle se laga hai / settle ho chuka": "duplicate_claim",
     "Sign ya photo ki problem": "signature_or_photo",
+    "Pension (EPS) ki problem": "pension_eps_issue",
+    "Contribution nahi aaya / ECR reconcile nahi": "contribution_missing",
+    "Purani naukri ka transfer pending": "transfer_pending",
+    "PAN / Form 15G / TDS": "tax_pan_15g",
+    "Employer ka confirmation / genuineness letter": "employer_confirmation",
     "Kuch aur (Note me likhein)": "other",
 }
 FORMS = ["19", "10C", "31", "13", "10D", "5IF"]

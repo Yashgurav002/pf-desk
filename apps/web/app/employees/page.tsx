@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, post, fmtDate, FORMS } from "@/lib/api";
 import { ErrorBox, Loading } from "@/lib/ui";
+import { useT } from "@/lib/i18n";
 
 type Emp = {
   id: string; employer_id: string; employer_name: string; name_uan: string; uan_masked: string;
@@ -12,6 +13,7 @@ type Employer = { id: string; name: string };
 
 export default function Employees() {
   const router = useRouter();
+  const { t } = useT();
   const [q, setQ] = useState("");
   const [employer, setEmployer] = useState("");
   const [employers, setEmployers] = useState<Employer[]>([]);
@@ -38,29 +40,29 @@ export default function Employees() {
 
   return (
     <div>
-      <h1>Employees</h1>
+      <h1>{t("employees")}</h1>
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <input className="inp" placeholder="Search by name or UAN" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="inp" placeholder={t("searchEmp")} value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="inp" value={employer} onChange={(e) => setEmployer(e.target.value)}>
-          <option value="">All employers</option>
+          <option value="">{t("allEmployers")}</option>
           {employers.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
       </div>
       <ErrorBox error={error} />
-      {!rows ? !error && <Loading /> : rows.length === 0 ? <p>No employees found.</p> : (
+      {!rows ? !error && <Loading /> : rows.length === 0 ? <p>{t("noEmployees")}</p> : (
         <ul className="space-y-2">
           {rows.map((e) => (
             <li key={e.id} className="card">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span><b>{e.name_uan}</b> · UAN {e.uan_masked}<br />
-                  <span className="text-gray-700">{e.employer_name}{e.date_of_exit && ` · left ${fmtDate(e.date_of_exit)}`} · {e.claim_count} claim(s)</span></span>
-                <button className="btn" onClick={() => setPicking(picking === e.id ? null : e.id)}>New claim</button>
+                  <span className="text-gray-700">{e.employer_name}{e.date_of_exit && ` · ${t("leftOn", { d: fmtDate(e.date_of_exit) })}`} · {t("claimCount", { n: e.claim_count })}</span></span>
+                <button className="btn" onClick={() => setPicking(picking === e.id ? null : e.id)}>{t("newClaim")}</button>
               </div>
               {picking === e.id && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">Choose form:</span>
+                  <span className="font-semibold">{t("chooseForm")}</span>
                   {FORMS.map((f) => <button key={f} className="btn2" disabled={busy} onClick={() => newClaim(e.id, f)}>Form {f}</button>)}
-                  {busy && <Loading text="Creating claim…" />}
+                  {busy && <Loading text={t("creatingClaim")} />}
                 </div>
               )}
             </li>

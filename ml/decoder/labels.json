@@ -14,7 +14,12 @@
     "purpose_ineligible": {"fields": ["purpose"], "fix": ["R-PARTIAL-WITHDRAWAL"]},
     "duplicate_claim": {"fields": ["claim"], "fix": ["R-DUPLICATE"]},
     "signature_or_photo": {"fields": ["signature", "photo"], "fix": ["R-DOCS-CLEAR"]},
+    "pension_eps_issue": {"fields": ["pension"], "fix": ["R-EPS-PENSION"]},
+    "contribution_missing": {"fields": ["contribution"], "fix": ["R-CONTRIBUTION"]},
+    "transfer_pending": {"fields": ["previous_service"], "fix": ["R-TRANSFER"]},
+    "tax_pan_15g": {"fields": ["pan"], "fix": ["R-TDS-PAN"]},
+    "employer_confirmation": {"fields": ["employer_letter"], "fix": ["R-EMPLOYER-CONFIRM"]},
     "other": {"fields": [], "fix": []}
   },
-  "fields": ["name", "father_name", "dob", "bank_account", "ifsc", "cheque_image", "kyc", "aadhaar", "date_of_exit", "service_period", "purpose", "claim", "signature", "photo"]
+  "fields": ["name", "father_name", "dob", "bank_account", "ifsc", "cheque_image", "kyc", "aadhaar", "date_of_exit", "service_period", "purpose", "claim", "signature", "photo", "pension", "contribution", "previous_service", "pan", "employer_letter"]
 }

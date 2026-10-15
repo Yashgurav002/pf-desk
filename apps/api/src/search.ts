@@ -16,9 +16,9 @@ export const vecLiteral = (v: number[]) => `[${v.join(',')}]`;
 /** Lowercase alnum tokens OR-ed together; '' if nothing searchable. "Form 10C" -> "form | 10c" (matches the '10c' lexeme). */
 export const tsQuery = (q: string) => (q.toLowerCase().match(/[a-z0-9]+/g) ?? []).join(' | ');
 
-export async function searchRules(q: string, limit = 5): Promise<(RuleRow & { score: number })[]> {
+export async function searchRules(q: string, limit = 5, use: 'hybrid' | 'keyword' | 'vector' = 'hybrid'): Promise<(RuleRow & { score: number })[]> {
   const legs: { ids: string[]; w: number }[] = [];
-  const tsq = tsQuery(q);
+  const tsq = use === 'vector' ? '' : tsQuery(q);
   if (tsq) {
     // Rank by how many distinct query words match first, so a rare "10c" beats many repeats of "form".
     const rows = await query<{ id: string }>(
@@ -31,7 +31,7 @@ export async function searchRules(q: string, limit = 5): Promise<(RuleRow & { sc
     // Form codes ("10C", "31") are exact terms embeddings don't understand: keyword leg counts triple.
     legs.push({ ids: rows.map((r) => r.id), w: /\d/.test(tsq) ? 3 : 1 });
   }
-  const v = q.trim() ? await embed(q, 'query') : null;
+  const v = q.trim() && use !== 'keyword' ? await embed(q, 'query') : null;
   if (v) {
     const rows = await query<{ id: string }>(
       `select id from rules where embedding is not null order by embedding <=> $1::vector, id limit ${LEG}`,

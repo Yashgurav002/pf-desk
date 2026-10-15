@@ -1,0 +1,10 @@
+{
+  "name": "temporal-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../.env temporal.mjs",
+    "test": "echo no tests",
+    "typecheck": "echo no typecheck"
+  }
+}

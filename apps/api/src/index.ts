@@ -1,3 +1,4 @@
+import { capture } from './sentry.ts'; // first: initialises Sentry when SENTRY_DSN_API is set
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { serve } from '@hono/node-server';
@@ -18,6 +19,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tabpfnRisk, tabpfnEta, ageBand, sizeBand } from './tabpfn.ts';
 import type { FeatureRow } from './tabpfn.ts';
+import { parseSalarySheet } from './salary.ts';
+import { validateSalary } from './activities.ts';
+import { startCycle, cycleUploaded, cyclePaid, cycleStatus, claimStatusChanged } from './temporal.ts';
 
 const env = process.env;
 const DEMO = env.DEMO_MODE === 'true';
@@ -25,7 +29,7 @@ const PASSCODE = env.CONSULTANT_PASSCODE || (DEMO ? 'demo' : '');
 const PUBLIC_URL = env.PUBLIC_URL || 'http://localhost:3000';
 const LANGS = { hi: 'Hindi (Devanagari script)', mr: 'Marathi (Devanagari script)', en: 'English' } as const;
 type Lang = keyof typeof LANGS;
-const CATEGORIES = ['name_mismatch', 'father_name_mismatch', 'dob_mismatch', 'bank_details_invalid', 'bank_not_verified', 'cheque_image_unclear', 'kyc_not_approved', 'aadhaar_not_linked', 'exit_date_missing', 'service_ineligible', 'waiting_period', 'purpose_ineligible', 'duplicate_claim', 'signature_or_photo', 'other'];
+const CATEGORIES = Object.keys(VOCAB.categories); // ml/decoder/labels.json
 const STATUSES = ['draft', 'checked', 'submitted', 'under_process', 'settled', 'rejected', 'resubmitted', 'closed'];
 const CONSULTANT_PROMPT = `You help a Provident Fund consultant prepare and check EPF claims and monthly filings.
 Use ONLY the facts and Rule Book entries provided. Cite the rule id for every rule you state.
@@ -40,12 +44,20 @@ If the question is outside these facts, or the person is upset or the claim was 
 Keep answers to 2-3 short sentences. Be warm and respectful.
 Reply as JSON: {"topic": "status" | "documents" | "other", "answer": string, "escalate": boolean}.
 topic "status" = when will my money come / what is happening with my claim. "documents" = what document or correction is needed for my claim.
-Anything else (loans, advances, other schemes, complaints, advice, rules not in the entries) is "other".`;
+Anything else (loans, advances, other schemes, complaints, advice, EPFO offices or staff, rules not in the entries) is "other".`;
 const CALLBACK = {
   hi: 'यह सवाल मैं यहाँ नहीं बता सकता। आपके PF सलाहकार जल्द ही आपको कॉल करेंगे।',
   mr: 'या प्रश्नाचे उत्तर मी येथे देऊ शकत नाही. तुमचे PF सल्लागार लवकरच तुम्हाला कॉल करतील.',
   en: "I can't answer that here. Your PF consultant will call you soon.",
 };
+// rejected claim: never let the model guess a date or reason; the consultant handles it
+const REJECTED = {
+  hi: 'आपके क्लेम में कुछ सुधार की ज़रूरत है, इसलिए अभी पैसे की तारीख नहीं बताई जा सकती। आपके PF सलाहकार जल्द ही आपको कॉल करके बताएंगे कि क्या करना है।',
+  mr: 'तुमच्या क्लेममध्ये काही दुरुस्ती करावी लागेल, त्यामुळे आत्ता पैशाची तारीख सांगता येत नाही. तुमचे PF सल्लागार लवकरच कॉल करून पुढे काय करायचे ते सांगतील.',
+  en: 'Your claim needs a correction, so there is no payment date yet. Your PF consultant will call you soon and tell you what to do.',
+};
+// gemma3:4b sometimes drifts into another script mid-sentence (Bengali, CJK…); retry once, then strip
+const FOREIGN_SCRIPT = /[ঀ-෿฀-࿿぀-ヿ一-鿿가-힯؀-ۿ]/;
 
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 const addDays = (d: string, n: number) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + Math.round(n)); return x.toISOString().slice(0, 10); };
@@ -53,7 +65,7 @@ const log = (action: string, ref_id: string | null, actor = 'consultant') =>
   query('insert into access_log (actor, action, ref_id) values ($1,$2,$3)', [actor, action, ref_id]).catch(() => {});
 
 const app = new Hono();
-app.onError((err, c) => { console.error(err); return c.json({ error: err.message }, 500); });
+app.onError((err, c) => { console.error(err); capture(err); return c.json({ error: err.message }, 500); });
 
 // ---------- auth ----------
 const COOKIE = 'pfd';
@@ -71,7 +83,8 @@ const authed = (c: Context) => {
 };
 app.get('/auth/me', (c) => (authed(c) ? c.json({ ok: true }) : c.json({ error: 'Login required' }, 401)));
 app.use('/v1/*', async (c, next) => {
-  if (c.req.path.startsWith('/v1/help/') || authed(c)) return next();
+  // help pages use their own link token; the voice LLM endpoint checks VOICE_SHARED_SECRET itself
+  if (c.req.path.startsWith('/v1/help/') || c.req.path.startsWith('/v1/voice/') || authed(c)) return next();
   return c.json({ error: 'Login required' }, 401);
 });
 
@@ -164,11 +177,55 @@ app.get('/v1/today', async (c) => {
   ]);
   return c.json({ fix_before_submit: fix, rejected, overdue, salary_missing: salaryMissing, payments_due: paymentsDue, escalations });
 });
+// ---------- monthly cycle (F5, Temporal) ----------
+// wage_month 'YYYY-MM' or 'YYYY-MM-DD' -> 'YYYY-MM-01'; default: last month (the one being filed now)
+const wageMonthOf = (s: unknown) => (/^\d{4}-\d{2}/.test(String(s ?? '')) ? String(s).slice(0, 7) + '-01' : addDays(today().slice(0, 8) + '01', -1).slice(0, 8) + '01');
+app.post('/v1/employers/:id/cycle/start', async (c) => {
+  const wm = wageMonthOf((await c.req.json().catch(() => ({}))).wage_month);
+  const workflow = await startCycle(c.req.param('id'), wm);
+  log('cycle_start', c.req.param('id'));
+  return c.json({ ok: true, wage_month: wm, workflow, temporal: workflow !== null });
+});
 app.post('/v1/employers/:id/cycle/paid', async (c) => {
-  const { wage_month } = await c.req.json();
-  await query(`update salary_uploads set status = 'paid' where employer_id = $1 and wage_month = $2`, [c.req.param('id'), wage_month]);
+  const wm = wageMonthOf((await c.req.json().catch(() => ({}))).wage_month);
+  await query(`update salary_uploads set status = 'paid' where employer_id = $1 and wage_month = $2`, [c.req.param('id'), wm]);
+  const signalled = await cyclePaid(c.req.param('id'), wm);
   log('cycle_paid', c.req.param('id'));
-  return c.json({ ok: true });
+  return c.json({ ok: true, temporal: !!signalled });
+});
+app.post('/v1/employers/:id/salary', async (c) => {
+  const body = await c.req.parseBody();
+  if (!(body.file instanceof File)) return c.json({ error: 'file required' }, 400);
+  const employerId = c.req.param('id'), wm = wageMonthOf(body.wage_month);
+  const { headers, rows } = await readSheet(body.file);
+  let parsed;
+  try { parsed = parseSalarySheet(headers, rows); } catch (err) { return c.json({ error: (err as Error).message }, 400); }
+  if (!parsed.length) return c.json({ error: 'No employee rows found in the sheet' }, 400);
+  // one upload per employer-month: a re-upload replaces the rows and goes back to validation
+  const [old] = await query('select id from salary_uploads where employer_id = $1 and wage_month = $2 order by created_at desc limit 1', [employerId, wm]);
+  const [u] = old
+    ? await query(`update salary_uploads set rows = $2, validation = null, status = 'received', created_at = now() where id = $1 returning id`, [old.id, JSON.stringify(parsed)])
+    : await query(`insert into salary_uploads (employer_id, wage_month, rows) values ($1,$2,$3) returning id`, [employerId, wm, JSON.stringify(parsed)]);
+  await validateSalary(u.id); // same activity the workflow runs (idempotent), so validation works without Temporal
+  const workflow = await cycleUploaded(employerId, wm, u.id);
+  log('salary_upload', employerId);
+  const [r] = await query('select validation from salary_uploads where id = $1', [u.id]);
+  return c.json({ upload_id: u.id, wage_month: wm, validation: r.validation, temporal: !!workflow });
+});
+const CYCLE_STATE: Record<string, string> = { received: 'validating', validated: 'awaiting_payment', paid: 'paid', archived: 'paid' };
+app.get('/v1/cycles', async (c) => {
+  const wm = wageMonthOf(c.req.query('wage_month'));
+  const rows = await query(`select er.id, er.name, er.cycle_day, er.due_day,
+    (s.wage_month + interval '1 month' + (er.due_day - 1) * interval '1 day')::date::text due_date,
+    s.id upload_id, s.status upload_status, s.created_at uploaded_at, s.validation
+    from employers er left join lateral (select * from salary_uploads x where x.employer_id = er.id and x.wage_month = $1::date order by x.created_at desc limit 1) s on true
+    order by er.name`, [wm]);
+  const tasks = await query(`select id, kind, ref_id, title, body, due_at, created_at from tasks where kind in ('cycle','claim') and not done order by created_at desc limit 200`);
+  const employers = await Promise.all(rows.map(async (r: any) => ({
+    ...r, state: CYCLE_STATE[r.upload_status] ?? 'waiting_sheet',
+    workflow: await cycleStatus(r.id, wm), // null when Temporal is off or no cycle was started
+  })));
+  return c.json({ wage_month: wm, employers, tasks });
 });
 app.post('/v1/tasks/:id/done', async (c) => {
   await query('update tasks set done = true where id = $1', [c.req.param('id')]);
@@ -227,7 +284,9 @@ app.patch('/v1/claims/:id', async (c) => {
   const [r] = await query(`update claims set status = $2, rejection_remark = coalesce($3, rejection_remark)
     ${dateCol ? `, ${dateCol} = $4::date` : ''} where id = $1 returning *`,
     dateCol ? [c.req.param('id'), b.status, b.rejection_remark ?? null, today()] : [c.req.param('id'), b.status, b.rejection_remark ?? null]);
+  if (!r) return c.json({ error: 'Not found' }, 404);
   log(`status_${b.status}`, r.id);
+  void claimStatusChanged(r.id, b.status); // ClaimFollowUpWorkflow; never blocks or fails the request
   return c.json(r);
 });
 async function featureRow(e: any, claim: any, f: Record<string, any>): Promise<FeatureRow> {
@@ -518,6 +577,29 @@ app.post('/v1/help/:token/message', async (c) => {
   if (h.status !== 200) return c.json({ error: 'Link not valid' }, h.status);
   const { text, history = [] } = await c.req.json<{ text: string; history?: { role: 'user' | 'assistant'; content: string }[] }>();
   if (!text?.trim()) return c.json({ error: 'text required' }, 400);
+  return c.json(await answerHelp(h, text, history, 'text'));
+});
+
+// ElevenLabs Agents "Custom LLM" (PRD §16): OpenAI-compatible, streamed. The agent's system prompt must contain
+// `help_token: {{help_token}}` (dynamic variable set by the help page); auth = the agent's secret as Bearer token.
+app.post('/v1/voice/llm/chat/completions', async (c) => {
+  if (!env.VOICE_SHARED_SECRET || c.req.header('authorization') !== `Bearer ${env.VOICE_SHARED_SECRET}`) return c.json({ error: 'unauthorized' }, 401);
+  const b = await c.req.json<{ messages: { role: string; content: any }[]; elevenlabs_extra_body?: { help_token?: string } }>();
+  const text = (m: { content: any }) => (typeof m.content === 'string' ? m.content : (m.content ?? []).map((p: any) => p.text ?? '').join(''));
+  const token = b.elevenlabs_extra_body?.help_token ?? b.messages.map(text).join('\n').match(/help_token:\s*([A-Za-z0-9_-]{16,})/)?.[1];
+  const h = token ? await helpContext(token) : { status: 404 as const };
+  const turns = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').map((m) => ({ role: m.role as 'user' | 'assistant', content: text(m) }));
+  const last = turns.at(-1);
+  const answer = h.status !== 200 ? 'This help link is not valid. Please ask your PF consultant for a new link.'
+    : last?.role === 'user' && last.content.trim() ? (await answerHelp(h, last.content, turns.slice(0, -1), 'voice')).answer : '';
+  const chunk = (delta: object, finish: string | null = null) =>
+    `data: ${JSON.stringify({ id: 'pfd', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: 'pfdesk-helpline', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+  return new Response(chunk({ role: 'assistant', content: answer }) + chunk({}, 'stop') + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+});
+app.get('/v1/voice/config', (c) => c.json({ agent_id: env.ELEVENLABS_AGENT_ID || null }));
+
+async function answerHelp(h: Extract<Awaited<ReturnType<typeof helpContext>>, { status: 200 }>, text: string,
+  history: { role: 'user' | 'assistant'; content: string }[], channel: 'text' | 'voice') {
   const pii = employeePii(h.e);
   const hits = await searchRules(text, 3).catch(() => []);
   const context = `Today: ${today()}. Employee's preferred language: ${LANGS[h.e.preferred_language as Lang] ?? 'Hindi'} (reply in the language the employee writes in).
@@ -525,26 +607,28 @@ Claims (facts):\n${h.claims.length ? h.claims.map((x: any) => `- Form ${x.form}:
 Rule Book entries:\n${hits.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).join('\n') || '- none matched'}`;
   let answer: string, escalate: boolean;
   try {
-    const raw = await chat([
+    const ask = async () => JSON.parse(await chat([
       { role: 'system', content: `${HELPLINE_PROMPT}\n\n${context}` },
       ...history.slice(-6),
       { role: 'user', content: text },
-    ], pii, { json: true, kind: 'helpline' });
-    const d = JSON.parse(raw);
-    answer = String(d.answer ?? '');
+    ], pii, { json: true, kind: 'helpline' }));
+    let d = await ask();
+    if (FOREIGN_SCRIPT.test(String(d.answer ?? ''))) d = await ask();
+    answer = String(d.answer ?? '').replace(new RegExp(FOREIGN_SCRIPT.source, 'g'), '');
     escalate = !!d.escalate || h.claims.some((x: any) => x.rejected) || !answer;
     // off-topic: never let the model improvise advice; hand to the consultant
     if (d.topic !== 'status' && d.topic !== 'documents') { answer = CALLBACK[(h.e.preferred_language as Lang) ?? 'hi'] ?? CALLBACK.hi; escalate = true; }
+    else if (h.claims.some((x: any) => x.rejected) && !h.claims.some((x: any) => x.eta)) answer = REJECTED[(h.e.preferred_language as Lang) ?? 'hi'] ?? REJECTED.hi;
   } catch {
     answer = 'Sorry, I could not answer right now. Your PF consultant will call you.';
     escalate = true;
   }
   if (escalate) await query(`insert into tasks (kind, ref_id, title) select 'escalation', $1::uuid, $2
     where not exists (select 1 from tasks where kind = 'escalation' and ref_id = $1::uuid and not done)`, [h.e.id, `Helpline: ${h.e.name_uan.split(' ')[0]} asked "${pii.tokenize(text).slice(0, 120)}" — please call`]);
-  await query(`insert into help_sessions (employee_id, channel, transcript_redacted, resolved, escalated) values ($1,'text',$2,$3,$4)`,
-    [h.e.id, JSON.stringify([{ role: 'user', content: pii.tokenize(text) }, { role: 'assistant', content: pii.tokenize(answer) }]), !escalate, escalate]);
-  return c.json({ answer, escalated: escalate });
-});
+  await query(`insert into help_sessions (employee_id, channel, transcript_redacted, resolved, escalated) values ($1,$5,$2,$3,$4)`,
+    [h.e.id, JSON.stringify([{ role: 'user', content: pii.tokenize(text) }, { role: 'assistant', content: pii.tokenize(answer) }]), !escalate, escalate, channel]);
+  return { answer, escalated: escalate };
+}
 
 // ---------- boot ----------
 await migrate();
@@ -557,3 +641,6 @@ if (DEMO) {
 embedMissingRules().catch((err) => console.warn('embedding skipped:', err.message));
 const port = Number(env.API_PORT || env.PORT || 8787);
 serve({ fetch: app.fetch, port }, () => console.log(`PF Desk API on :${port} (demo=${DEMO})`));
+// Temporal worker in-process: embedded PGlite is one process per data dir. With DATABASE_URL you can set
+// TEMPORAL_WORKER=off and run `pnpm --filter api worker` separately. Retries quietly while Temporal is down.
+if (env.TEMPORAL_WORKER !== 'off') import('./worker.ts').then((w) => w.runWorkerForever()).catch((err) => console.warn('[temporal] worker disabled:', err.message));

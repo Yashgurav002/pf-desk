@@ -132,3 +132,12 @@ create table if not exists remark_labels (
   labelled_by text,
   created_at timestamptz default now()
 );
+
+-- Phase 4 (Temporal): idempotent task creation (worker replay never duplicates) and once-only outcome recording
+alter table tasks add column if not exists body text;
+alter table tasks add column if not exists dedupe_key text;
+create unique index if not exists tasks_dedupe_key_idx on tasks (dedupe_key);
+alter table history_claims add column if not exists claim_id uuid;
+-- one row per claim outcome: a claim rejected once and settled after resubmission gives a rejected and a settled row
+drop index if exists history_claims_claim_id_idx;
+create unique index if not exists history_claims_claim_outcome_idx on history_claims (claim_id, outcome);

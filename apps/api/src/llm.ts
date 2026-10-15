@@ -1,6 +1,7 @@
 // OpenAI-compatible chat + embeddings (Ollama locally). Every chat goes through the PII tokenizer.
 import type { Pii } from './pii.ts';
 import { query } from './db.ts';
+import { span } from './sentry.ts';
 
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -27,9 +28,11 @@ export async function chat(
   if (opts.json) body.response_format = { type: 'json_object' };
 
   const t0 = Date.now();
-  const res = await fetch(url, { method: 'POST', headers: headers(), body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
-  if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data: any = await res.json();
+  const data: any = await span(`llm.${opts.kind ?? 'chat'}`, 'gen_ai.chat', { model }, async () => {
+    const res = await fetch(url, { method: 'POST', headers: headers(), body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
+    if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return res.json();
+  });
   const reply: string = data.choices?.[0]?.message?.content ?? '';
 
   await query('insert into agent_runs (kind, model, tokens_in, tokens_out, latency_ms) values ($1,$2,$3,$4,$5)', [

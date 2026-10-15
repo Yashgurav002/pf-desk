@@ -1,3 +1,7 @@
 packages:
   - apps/*
   - ml/*
+  - scripts
+allowBuilds:
+  '@swc/core': false
+  protobufjs: false

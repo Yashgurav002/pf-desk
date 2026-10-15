@@ -1,5 +1,6 @@
 // Client for ml/tabpfn/serve.py. Sends only de-identified feature columns (PRD §6.4); returns null when the service is down so callers fall back to baselines.
 import { query } from './db.ts';
+import { span } from './sentry.ts';
 
 const URL = process.env.TABPFN_URL || 'http://127.0.0.1:8790';
 export const FEATURE_COLS = ['form', 'service_months', 'age_band', 'employer_size_band', 'name_match', 'father_match', 'dob_match',
@@ -9,11 +10,11 @@ export type FeatureRow = Record<(typeof FEATURE_COLS)[number], string | number |
 let warned = false;
 async function predict(task: 'risk' | 'eta', train: unknown[], rows: FeatureRow[]): Promise<any | null> {
   try {
-    const r = await fetch(`${URL}/predict`, {
+    const r = await span(`tabpfn.${task}`, 'ml.predict', { train_rows: train.length, rows: rows.length }, () => fetch(`${URL}/predict`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ task, train, rows: rows.map((row) => Object.fromEntries(FEATURE_COLS.map((c) => [c, row[c]]))) }),
       signal: AbortSignal.timeout(90_000),
-    });
+    }));
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     return await r.json();
   } catch (err) {
