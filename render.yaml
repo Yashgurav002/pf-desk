@@ -1,5 +1,6 @@
 # Public demo (synthetic data only). One service runs the API (:8787, internal) and the web app ($PORT, public);
-# the web app proxies /api/* to the API. PGlite resets on every deploy, which is fine: DEMO_MODE reseeds synthetic data.
+# the web app proxies /api/* to the API. DATABASE_URL = hosted Postgres with pgvector (Tiger Cloud free plan):
+# embedded PGlite needs ~350 MB on its own, too much next to Next.js on a 512 MB instance.
 # No Ollama on Render: LLM_* point at a hosted Gemma endpoint (synthetic data only — real data stays in local mode).
 services:
   - type: web
@@ -7,13 +8,15 @@ services:
     runtime: node
     plan: free  # no card needed; sleeps after 15 min idle (first visit then takes ~1 min)
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web build
-    startCommand: (pnpm --filter api start &) && pnpm --filter web start
+    # node directly (no pnpm wrapper processes): the free plan has 512 MB
+    startCommand: (cd apps/api && node src/index.ts &) && cd apps/web && node_modules/.bin/next start -p $PORT
     healthCheckPath: /api/health
     domains:
       - pfdesk.buildwithyash.tech
     envVars:
       - { key: NODE_VERSION, value: "24" }
       - { key: DEMO_MODE, value: "true" }
+      - { key: DATABASE_URL, sync: false }
       - { key: API_PORT, value: "8787" }
       - { key: API_URL, value: "http://127.0.0.1:8787" }
       - { key: PUBLIC_URL, value: "https://pfdesk.buildwithyash.tech" }
