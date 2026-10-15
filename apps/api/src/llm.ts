@@ -25,7 +25,11 @@ export async function chat(
     temperature: 0.2,
     messages: messages.map((m) => ({ role: m.role, content: pii.tokenize(m.content) })),
   };
-  if (opts.json) body.response_format = { type: 'json_object' };
+  // Gemma on Google's API (the public demo) accepts neither system instructions nor JSON mode:
+  // fold the system prompt into the first user turn and rely on the prompt + fence stripping below.
+  const noSystem = process.env.LLM_COMPAT === 'gemma-api';
+  if (noSystem) body.messages = foldSystem(body.messages as ChatMessage[]);
+  if (opts.json && !noSystem) body.response_format = { type: 'json_object' };
 
   const t0 = Date.now();
   const data: any = await span(`llm.${opts.kind ?? 'chat'}`, 'gen_ai.chat', { model }, async () => {
@@ -33,13 +37,23 @@ export async function chat(
     if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return res.json();
   });
-  const reply: string = data.choices?.[0]?.message?.content ?? '';
+  let reply: string = data.choices?.[0]?.message?.content ?? '';
+  if (opts.json) reply = reply.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
 
   await query('insert into agent_runs (kind, model, tokens_in, tokens_out, latency_ms) values ($1,$2,$3,$4,$5)', [
     opts.kind ?? 'chat', model, data.usage?.prompt_tokens ?? null, data.usage?.completion_tokens ?? null, Date.now() - t0,
   ]).catch((e) => console.warn('[llm] agent_runs log failed:', e.message));
 
   return pii.detokenize(reply);
+}
+
+export function foldSystem(msgs: ChatMessage[]): ChatMessage[] {
+  const sys = msgs.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+  const rest = msgs.filter((m) => m.role !== 'system');
+  const i = rest.findIndex((m) => m.role === 'user');
+  if (!sys) return rest;
+  if (i < 0) return [{ role: 'user', content: sys }, ...rest];
+  return rest.map((m, j) => (j === i ? { ...m, content: `${sys}\n\n${m.content}` } : m));
 }
 
 let embedWarned = false;

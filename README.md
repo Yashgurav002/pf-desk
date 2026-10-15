@@ -4,7 +4,7 @@ Private back office for Provident Fund consultants: pre-checks claims before EPF
 
 > PF Desk helps consultants prepare and check. It does not file with EPFO, and it is not legal or financial advice. Rules change: always verify with the latest EPFO circulars.
 
-Spec: [`PFDESK_PRD.md`](PFDESK_PRD.md) · Progress: [`TASKS.md`](TASKS.md)
+Live demo (synthetic data): https://pfdesk.buildwithyash.tech · Spec: [`PFDESK_PRD.md`](PFDESK_PRD.md) · Progress: [`TASKS.md`](TASKS.md) · License: MIT
 
 ## Run locally
 

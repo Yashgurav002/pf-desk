@@ -1,24 +1,28 @@
-# Demo deploy (synthetic data). Custom domain: add in the Render dashboard once chosen.
+# Public demo (synthetic data only). One service runs the API (:8787, internal) and the web app ($PORT, public);
+# the web app proxies /api/* to the API. PGlite resets on every deploy, which is fine: DEMO_MODE reseeds synthetic data.
+# No Ollama on Render: LLM_* point at a hosted Gemma endpoint (synthetic data only — real data stays in local mode).
 services:
   - type: web
-    name: pfdesk-api
+    name: pf-desk
     runtime: node
-    buildCommand: corepack enable && pnpm install --frozen-lockfile
-    startCommand: pnpm --filter api start
-    healthCheckPath: /health
+    plan: starter
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web build
+    startCommand: (pnpm --filter api start &) && pnpm --filter web start
+    healthCheckPath: /api/health
+    domains:
+      - pfdesk.buildwithyash.tech
     envVars:
       - { key: NODE_VERSION, value: "24" }
       - { key: DEMO_MODE, value: "true" }
-      - { key: DATABASE_URL, sync: false }
-      - { key: LLM_BASE_URL, sync: false }
+      - { key: API_PORT, value: "8787" }
+      - { key: API_URL, value: "http://127.0.0.1:8787" }
+      - { key: PUBLIC_URL, value: "https://pfdesk.buildwithyash.tech" }
+      - { key: TEMPORAL_WORKER, value: "off" }
+      - { key: LLM_BASE_URL, value: "https://generativelanguage.googleapis.com/v1beta/openai" }
+      - { key: LLM_MODEL, value: "gemma-3-27b-it" }
+      - { key: LLM_COMPAT, value: "gemma-api" }
       - { key: LLM_API_KEY, sync: false }
-      - { key: LLM_MODEL, sync: false }
-      - { key: PUBLIC_URL, sync: false }
-  - type: web
-    name: pfdesk-web
-    runtime: node
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web build
-    startCommand: pnpm --filter web start
-    envVars:
-      - { key: NODE_VERSION, value: "24" }
-      - { key: API_URL, sync: false }
+      - { key: DECODER_MODEL, value: "gemma-3-27b-it" }
+      - { key: SENTRY_DSN_API, sync: false }
+      - { key: ELEVENLABS_AGENT_ID, sync: false }
+      - { key: VOICE_SHARED_SECRET, sync: false }
