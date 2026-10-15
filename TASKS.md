@@ -98,7 +98,7 @@ Design: fine-tuned **Qwen3-8B** (Tinker LoRA) does extraction — remark → `{c
 - [x] T3.5 `ml/decoder/eval.py` — base Qwen3-8B zero-shot vs Gemma 3 4B few-shot vs fine-tuned: macro-F1, JSON validity, p50 latency, cost/1k → `evaluation/decoder.md`
 - [x] T3.6 Export: adapter → PEFT → GGUF LoRA → llama-server on Ollama's qwen3:8b file (`ml/decoder/export.md`; Ollama 0.17 rejects LoRA)
 - [x] T3.7 API decode: fine-tuned extraction (DECODER_MODEL) + Gemma messages; Gemma few-shot fallback when the decoder isn't installed
-- [x] T3.8 Verify end to end, tests green, commit (decoder v3 eval on Tinker; laptop llama-server row pending RAM)
+- [x] T3.8 Verify end to end, tests green, commit (decoder v3: Tinker + laptop llama-server rows in decoder.md / decoder_public.md)
 - [ ] T3.9 Dad labels 150–400 real remarks with the label tool, then retrain — **needs dad**
 - [ ] T3.10 Dad rates 20 decoded messages 1–5 — **needs dad**
 - [ ] T3.0 `TINKER_API_KEY` in `.env` — **needs you** (Tinker console → API keys)
