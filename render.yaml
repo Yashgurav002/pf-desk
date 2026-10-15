@@ -5,7 +5,7 @@ services:
   - type: web
     name: pf-desk
     runtime: node
-    plan: starter
+    plan: free  # no card needed; sleeps after 15 min idle (first visit then takes ~1 min)
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter web build
     startCommand: (pnpm --filter api start &) && pnpm --filter web start
     healthCheckPath: /api/health
