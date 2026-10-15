@@ -37,7 +37,7 @@ export async function chat(
     if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return res.json();
   });
-  let reply: string = data.choices?.[0]?.message?.content ?? '';
+  let reply: string = stripThinking(data.choices?.[0]?.message?.content ?? '');
   if (opts.json) reply = reply.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
 
   await query('insert into agent_runs (kind, model, tokens_in, tokens_out, latency_ms) values ($1,$2,$3,$4,$5)', [
@@ -45,6 +45,12 @@ export async function chat(
   ]).catch((e) => console.warn('[llm] agent_runs log failed:', e.message));
 
   return pii.detokenize(reply);
+}
+
+/** Gemma 4 / Qwen3 may return their reasoning inline (<thought>…</thought>, <think>…</think>); never show it. */
+export function stripThinking(text: string): string {
+  const closed = text.replace(/<(thought|think|thinking)>[\s\S]*?<\/\1>/gi, '');
+  return closed.replace(/^[\s\S]*<\/(thought|think|thinking)>/i, '').replace(/<(thought|think|thinking)>[\s\S]*$/i, '').trim();
 }
 
 export function foldSystem(msgs: ChatMessage[]): ChatMessage[] {
