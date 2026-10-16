@@ -64,7 +64,7 @@ test('red team: 200 generated strings leak nothing', () => {
 test('model cannot unlock identifiers it was never sent', () => {
   // the prompt mentions "[UAN_1]" as a format example; a model echoing it must not get the real UAN back
   const p = new Pii([{ kind: 'NAME', value: 'Kannen Bhat' }, { kind: 'UAN', value: '105648706259' }]);
-  const sent = p.tokenize('Father name differs for Kannen Bhat (UAN record).');
+  const sent = p.tokenize('Identifiers appear as tokens like [NAME_1] or [UAN_1]. Father name differs for Kannen Bhat (UAN record).');
   assert.ok(!sent.includes('105648706259'));
   const reply = p.detokenize('Mismatch between the UAN ([UAN_1]) and the bank for [NAME_1].');
   assert.ok(!reply.includes('105648706259') && !reply.includes('6259'), reply);

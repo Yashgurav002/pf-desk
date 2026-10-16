@@ -51,6 +51,9 @@ export class Pii {
     return t;
   }
 
+  // only tokens we substituted count as sent (a literal "[UAN_1]" in a prompt's instructions does not)
+  private mark(t: string): string { this.sent.add(t); return t; }
+
   /** Register a known value (e.g. the employee's name from the DB). Returns its token. */
   add(kind: PiiKind, value: string): string {
     if (!value || !value.trim()) return '';
@@ -67,18 +70,17 @@ export class Pii {
         : value.trim().split(/\s+/).map(escape).join('\\s+');
       if (!body) continue;
       const re = new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, 'giu');
-      out = out.replace(re, () => this.token(kind, value));
+      out = out.replace(re, () => this.mark(this.token(kind, value)));
     }
     for (const [kind, re] of PATTERNS) {
       out = out.replace(re, (m) => {
         if (kind === 'AADHAAR') {
           const isUan = this.byKey.has(this.key('UAN', m));
-          return this.token(isUan ? 'UAN' : 'AADHAAR', m);
+          return this.mark(this.token(isUan ? 'UAN' : 'AADHAAR', m));
         }
-        return this.token(kind, m);
+        return this.mark(this.token(kind, m));
       });
     }
-    for (const t of out.match(/\[[A-Z]+_\d+\]/g) ?? []) this.sent.add(t);
     return out;
   }
 
