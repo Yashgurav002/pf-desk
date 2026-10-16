@@ -25,7 +25,10 @@ services:
       - { key: LLM_MODEL, value: "gemma-4-26b-a4b-it" }
       - { key: LLM_COMPAT, value: "gemma-api" }
       - { key: LLM_API_KEY, sync: false }
-      - { key: DECODER_MODEL, value: "gemma-4-26b-a4b-it" }
+      # fine-tuned decoder via Tinker's OpenAI-compatible endpoint (synthetic demo data only)
+      - { key: DECODER_BASE_URL, value: "https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1" }
+      - { key: DECODER_MODEL, value: "tinker://deb6174b-5c3d-53c2-922d-d3e6257ad060:train:0/sampler_weights/final" }
+      - { key: DECODER_API_KEY, sync: false }
       - { key: SENTRY_DSN_API, sync: false }
       - { key: ELEVENLABS_AGENT_ID, sync: false }
       - { key: VOICE_SHARED_SECRET, sync: false }

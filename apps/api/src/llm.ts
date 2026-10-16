@@ -7,9 +7,9 @@ export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: stri
 
 const base = () => (process.env.LLM_BASE_URL || 'http://localhost:11434/v1').replace(/\/$/, '');
 
-function headers(): Record<string, string> {
+function headers(key = process.env.LLM_API_KEY): Record<string, string> {
   const h: Record<string, string> = { 'content-type': 'application/json' };
-  if (process.env.LLM_API_KEY) h.authorization = `Bearer ${process.env.LLM_API_KEY}`;
+  if (key) h.authorization = `Bearer ${key}`;
   return h;
 }
 
@@ -18,7 +18,7 @@ let thinkingOffOk = true;
 export async function chat(
   messages: ChatMessage[],
   pii: Pii,
-  opts: { json?: boolean; model?: string; baseUrl?: string; kind?: string } = {},
+  opts: { json?: boolean; model?: string; baseUrl?: string; apiKey?: string; kind?: string } = {},
 ): Promise<string> {
   const model = opts.model || process.env.LLM_MODEL || 'gemma3:4b';
   const url = `${(opts.baseUrl || base()).replace(/\/$/, '')}/chat/completions`;
@@ -29,16 +29,20 @@ export async function chat(
   };
   // Gemma on Google's API (the public demo) accepts neither system instructions nor JSON mode:
   // fold the system prompt into the first user turn and rely on the prompt + fence stripping below.
-  const noSystem = process.env.LLM_COMPAT === 'gemma-api';
+  // never send the main LLM key to another host ('' = no auth header).
+  // a separate endpoint (the fine-tuned decoder: llama-server or Tinker) speaks plain OpenAI chat and was
+  // trained to answer in JSON, so the Gemma-API workarounds and JSON mode only apply to the main LLM
+  const own = !!opts.baseUrl;
+  const noSystem = !own && process.env.LLM_COMPAT === 'gemma-api';
   if (noSystem) body.messages = foldSystem(body.messages as ChatMessage[]);
-  if (opts.json && !noSystem) body.response_format = { type: 'json_object' };
+  if (opts.json && !noSystem && !own) body.response_format = { type: 'json_object' };
   // Gemma 4 thinks by default (~40 s per answer on the free API); ask for no reasoning, and drop the
   // parameter for good if the endpoint rejects it.
   if (noSystem && thinkingOffOk) body.reasoning_effort = 'none';
 
   const t0 = Date.now();
   const data: any = await span(`llm.${opts.kind ?? 'chat'}`, 'gen_ai.chat', { model }, async () => {
-    const send = () => fetch(url, { method: 'POST', headers: headers(), body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
+    const send = () => fetch(url, { method: 'POST', headers: headers(own ? opts.apiKey ?? '' : undefined), body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
     let res = await send();
     if (res.status === 400 && body.reasoning_effort) {
       console.warn('[llm] endpoint rejected reasoning_effort; continuing without it:', (await res.text()).slice(0, 200));

@@ -395,12 +395,12 @@ async function extractRemark(remark: string, pii: Pii) {
   let lastErr: unknown;
   for (const a of attempts) {
     try {
-      const raw = await chat([{ role: 'system', content: DECODER_PROMPT }, ...(a.few ? shots() : []), user], pii, { json: true, model: a.model, baseUrl: a.baseUrl, kind: 'decode' });
+      const raw = await chat([{ role: 'system', content: DECODER_PROMPT }, ...(a.few ? shots() : []), user], pii, { json: true, model: a.model, baseUrl: a.baseUrl, apiKey: a.few ? undefined : env.DECODER_API_KEY, kind: 'decode' });
       const d = JSON.parse(raw);
       if (!CATEGORIES.includes(d.category)) throw new Error(`unknown category ${d.category}`);
       const pick = (xs: unknown, allowed: string[]) => (Array.isArray(xs) ? xs.filter((x) => allowed.includes(x)) : []);
       const allFix = Object.values(VOCAB.categories).flatMap((v) => v.fix);
-      return { category: d.category as string, fields_involved: pick(d.fields_involved, VOCAB.fields), fix_step_ids: pick(d.fix_step_ids, allFix), model: a.few ? `${a.model} few-shot` : `${a.model} (fine-tuned)` };
+      return { category: d.category as string, fields_involved: pick(d.fields_involved, VOCAB.fields), fix_step_ids: pick(d.fix_step_ids, allFix), model: a.few ? `${a.model} few-shot` : a.model.startsWith('tinker://') ? 'PF Desk decoder (Qwen3-8B + LoRA, Tinker)' : `${a.model} (fine-tuned)` };
     } catch (err) { lastErr = err; }
   }
   throw lastErr;
