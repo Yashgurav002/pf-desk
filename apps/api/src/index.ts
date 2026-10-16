@@ -372,7 +372,7 @@ ${rules.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).join('\n') || '- none
       { role: 'system', content: CONSULTANT_PROMPT },
       { role: 'user', content: `${facts}
 
-Explain to the consultant in 3-5 short sentences of plain English: what to fix first and why, whether it is safe to submit now, and what the risk and estimate mean. Cite rule ids in square brackets.` },
+Explain to the consultant in 3-5 short sentences of plain English: what to fix first and why, whether it is safe to submit now, and what the risk and estimate mean. Cite rule ids in square brackets. Don't repeat the mismatched names or values (the consultant sees them in the problem list); say which records differ and what to do.` },
     ], employeePii(e), { kind: 'explain' });
     return c.json({ text: text.trim(), model: env.LLM_MODEL });
   } catch (err) { return llmError(c, err); }
