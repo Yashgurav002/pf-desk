@@ -4,6 +4,9 @@
 export type PiiKind = 'NAME' | 'UAN' | 'AADHAAR' | 'PAN' | 'IFSC' | 'ACC' | 'PHONE' | 'EMAIL' | 'AMT' | 'ID';
 
 const NUMERIC: ReadonlySet<PiiKind> = new Set(['UAN', 'AADHAAR', 'ACC', 'PHONE']);
+// identifiers that come back masked from model output (the UI shows them masked everywhere else too)
+const MASKED: ReadonlySet<PiiKind> = new Set(['UAN', 'AADHAAR', 'ACC', 'PHONE', 'PAN', 'EMAIL', 'ID']);
+const mask = (v: string) => { const a = v.replace(/[^A-Za-z0-9]/g, ''); return 'X'.repeat(Math.max(0, a.length - 4)) + a.slice(-4); };
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Pattern order matters: more specific shapes first so a PAN/IFSC/email is never split into
@@ -23,6 +26,7 @@ export class Pii {
   private byToken = new Map<string, string>(); // token -> original
   private counts = new Map<PiiKind, number>();
   private known: { kind: PiiKind; value: string }[] = [];
+  private sent = new Set<string>(); // tokens that actually appeared in tokenized text
 
   constructor(known: { kind: PiiKind; value: string }[] = []) {
     for (const k of known) this.add(k.kind, k.value);
@@ -74,11 +78,19 @@ export class Pii {
         return this.token(kind, m);
       });
     }
+    for (const t of out.match(/\[[A-Z]+_\d+\]/g) ?? []) this.sent.add(t);
     return out;
   }
 
-  detokenize(text: string): string {
-    return text.replace(/\[[A-Z]+_\d+\]/g, (t) => this.byToken.get(t) ?? t);
+  /** Restore tokens in model output. Only tokens that were actually sent are restored (a model that
+   * invents "[UAN_1]" from the prompt's examples must not unlock the real UAN), and identifiers come
+   * back masked (XXXXXXXX6259) unless full=true. Names are restored in full. */
+  detokenize(text: string, { full = false } = {}): string {
+    return text.replace(/\[([A-Z]+)_\d+\]/g, (t, kind: PiiKind) => {
+      const v = this.byToken.get(t);
+      if (v == null || !this.sent.has(t)) return kind === 'NAME' ? 'the employee' : '';
+      return full || !MASKED.has(kind) ? v : mask(v);
+    }).replace(/\(\s*\)/g, '').replace(/ {2,}/g, ' ');
   }
 }
 
