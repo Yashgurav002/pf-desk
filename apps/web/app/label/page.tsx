@@ -1,34 +1,22 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Download, ShieldAlert, Trash2, Upload } from "lucide-react";
 import { api, post, fmtDate, type Rule } from "@/lib/api";
-import { ErrorBox, Loading } from "@/lib/ui";
-import { useT } from "@/lib/i18n";
+import {
+  Button, Card, ErrorBox, Field, Input, Notice, PageHeader, SectionTitle, SkeletonRows, Textarea, buttonClass, cx,
+} from "@/lib/ui";
+import { useT, type Key } from "@/lib/i18n";
 
 type Vocab = { categories: Record<string, { fields: string[]; fix: string[] }>; fields: string[] };
 type Row = { id: string; text: string; category: string; fields_involved: string[]; fix_step_ids: string[]; source: string; labelled_by: string | null; created_at: string };
 type Data = { labels: Row[]; counts: Record<string, number>; total: number };
 
-const CAT_LABEL: Record<string, string> = {
-  name_mismatch: "Name mismatch", father_name_mismatch: "Father's name mismatch", dob_mismatch: "Date of birth mismatch",
-  bank_details_invalid: "Bank account / IFSC wrong", bank_not_verified: "Bank not verified", cheque_image_unclear: "Cheque / passbook image unclear",
-  kyc_not_approved: "KYC not approved by employer", aadhaar_not_linked: "Aadhaar not linked", exit_date_missing: "Date of exit missing",
-  service_ineligible: "Not enough service", waiting_period: "Waiting period not over", purpose_ineligible: "Purpose not allowed (advance)",
-  duplicate_claim: "Duplicate claim", signature_or_photo: "Signature or photo problem", pension_eps_issue: "Pension (EPS) problem",
-  contribution_missing: "Contribution missing / not reconciled", transfer_pending: "Previous service / transfer pending",
-  tax_pan_15g: "PAN / Form 15G / TDS", employer_confirmation: "Employer confirmation needed", other: "Other",
-};
-const FIELD_LABEL: Record<string, string> = {
-  name: "Name", father_name: "Father's name", dob: "Date of birth", bank_account: "Bank account", ifsc: "IFSC", cheque_image: "Cheque image",
-  kyc: "KYC", aadhaar: "Aadhaar", date_of_exit: "Date of exit", service_period: "Service period", purpose: "Purpose", claim: "Claim",
-  signature: "Signature", photo: "Photo", pension: "Pension (EPS)", contribution: "Contribution", previous_service: "Previous service",
-  pan: "PAN / 15G", employer_letter: "Employer letter",
-};
-const nice = (k: string, m: Record<string, string>) => m[k] ?? k.replace(/_/g, " ");
 const NAME_KEY = "pfd.labelledBy";
 const toggle = (xs: string[], x: string) => (xs.includes(x) ? xs.filter((y) => y !== x) : [...xs, x]);
 
 export default function Label() {
   const { t } = useT();
+  const nice = (prefix: string, k: string) => { const s = t(`${prefix}${k}` as Key); return s === `${prefix}${k}` ? k.replace(/_/g, " ") : s; };
   const [vocab, setVocab] = useState<Vocab | null>(null);
   const [rules, setRules] = useState<Record<string, string>>({});
   const [queue, setQueue] = useState<{ text: string; claim_count: number }[] | null>(null);
@@ -62,7 +50,7 @@ export default function Label() {
     if (!vocab) return;
     setCat(c); setFields(vocab.categories[c].fields); setFix(vocab.categories[c].fix);
   };
-  const select = (t: string) => { setText(t); setCat(""); setFields([]); setFix([]); setMsg(null); };
+  const select = (s: string) => { setText(s); setCat(""); setFields([]); setFix([]); setMsg(null); };
 
   // Number keys 1–9 pick a category when focus isn't in a text field.
   useEffect(() => {
@@ -78,7 +66,7 @@ export default function Label() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim() || !cat) return setError("Pick a remark and a reason first.");
+    if (!text.trim() || !cat) return setError(t("lbPickBoth"));
     setBusy(true); setError(null);
     try { localStorage.setItem(NAME_KEY, by.trim()); } catch {}
     try {
@@ -90,7 +78,7 @@ export default function Label() {
   }
 
   async function del(id: string) {
-    if (!confirm("Delete this label?")) return;
+    if (!confirm(t("lbDelConfirm"))) return;
     try { await api(`/v1/labels/${id}`, { method: "DELETE" }); await load(); } catch (err: any) { setError(err.message); }
   }
 
@@ -99,109 +87,135 @@ export default function Label() {
     setError(null);
     try {
       const r = await api<{ imported: number; skipped: number }>("/v1/labels/import", { method: "POST", body: await f.text(), headers: { "content-type": "application/x-ndjson" } });
-      setMsg(`Imported ${r.imported}, skipped ${r.skipped}.`);
+      setMsg(t("lbImported", { n: r.imported, s: r.skipped }));
       await load();
     } catch (err: any) { setError(err.message); }
   }
 
-  if (!vocab) return error ? <ErrorBox error={error} /> : <Loading />;
+  const check = "size-4 shrink-0 accent-[var(--color-brand)]";
 
   return (
-    <div className="space-y-6 text-lg">
-      <h1>{t("labelTitle")}</h1>
-      <p className="rounded-lg border-2 border-amber-500 bg-amber-50 p-3 font-semibold">
-        {t("noPii")}
-      </p>
-      <ErrorBox error={error} />
-      {msg && <p className="font-semibold text-green-800">{msg}</p>}
-
-      <section className="grid gap-6 md:grid-cols-2">
-        <div className="space-y-3">
-          <h2 className="mt-0">{t("waitingRemarks")}</h2>
-          {!queue ? <Loading /> : queue.length === 0 ? <p className="text-gray-700">{t("noneWaiting")}</p> : (
-            <ul className="max-h-96 space-y-2 overflow-y-auto">
-              {queue.map((q) => (
-                <li key={q.text}>
-                  <button className={`card w-full text-left ${q.text === text ? "border-blue-700 bg-blue-50" : "hover:bg-gray-50"}`} onClick={() => select(q.text)}>
-                    {q.text} <span className="text-base text-gray-600">· {t("claimCount", { n: q.claim_count })}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <label className="block font-semibold">{t("orType")}
-            <textarea className="inp mt-1 h-28" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. FATHER NAME NOT MATCHING WITH UAN" />
+    <div className="space-y-6">
+      <PageHeader kicker={t("kTools")} title={t("labelTitle")} description={t("lbDesc")}
+        actions={<>
+          <a className={buttonClass("secondary", "sm")} href="/api/v1/labels/export" download="remark_labels.jsonl"><Download className="size-4" aria-hidden />{t("lbExport")}</a>
+          <label className={cx(buttonClass("secondary", "sm"), "cursor-pointer")}><Upload className="size-4" aria-hidden />{t("lbImport")}
+            <input type="file" accept=".jsonl,.ndjson,.txt,application/x-ndjson" className="sr-only" onChange={(e) => { importFile(e.target.files?.[0]); e.target.value = ""; }} />
           </label>
-        </div>
+        </>} />
+      <Notice tone="warn" icon={<ShieldAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />}><span className="font-medium">{t("noPii")}</span></Notice>
+      <ErrorBox error={error} />
+      {msg && <p className="font-medium text-ok" role="status">{msg}</p>}
 
-        <form onSubmit={save} className="card space-y-4 bg-gray-50">
-          <h2 className="mt-0">{t("whatReason")}</h2>
-          {!text.trim() ? <p className="text-gray-700">{t("pickFirst")}</p> : <p className="break-words rounded bg-white p-2 font-mono">{text}</p>}
-          <fieldset className="grid gap-2">
-            <legend className="sr-only">Reason</legend>
-            {cats.map((c, i) => (
-              <label key={c} className={`flex cursor-pointer items-center gap-3 rounded-lg border-2 p-3 ${cat === c ? "border-blue-700 bg-blue-50" : "border-gray-300 bg-white"}`}>
-                <input type="radio" name="cat" className="h-6 w-6" checked={cat === c} onChange={() => pick(c)} />
-                <span className="font-semibold">{i < 9 && <kbd className="mr-2 rounded bg-gray-200 px-2">{i + 1}</kbd>}{nice(c, CAT_LABEL)}</span>
-              </label>
-            ))}
-          </fieldset>
-          {cat && (
-            <>
+      {!vocab ? !error && <Card className="p-5"><SkeletonRows rows={8} /></Card> : (
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          <div className="space-y-4">
+            <div>
+              <SectionTitle count={queue?.length}>{t("waitingRemarks")}</SectionTitle>
+              {!queue ? <SkeletonRows rows={4} /> : queue.length === 0 ? <p className="text-ink-3">{t("noneWaiting")}</p> : (
+                <Card className="max-h-96 divide-y divide-line overflow-y-auto">
+                  {queue.map((q) => (
+                    <button key={q.text} onClick={() => select(q.text)} aria-pressed={q.text === text}
+                      className={cx("relative block w-full px-4 py-2.5 text-left", q.text === text ? "bg-brand-tint" : "hover:bg-[#fcfbf8]")}>
+                      {q.text === text && <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-brand" aria-hidden />}
+                      <span className="block font-mono text-[0.85rem] leading-snug text-ink">{q.text}</span>
+                      <span className="text-xs text-ink-3">{t("claimCount", { n: q.claim_count })}</span>
+                    </button>
+                  ))}
+                </Card>
+              )}
+            </div>
+            <Field label={t("orType")}>
+              <Textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. FATHER NAME NOT MATCHING WITH UAN" className="font-mono text-[0.9rem]" />
+            </Field>
+          </div>
+
+          <Card className="p-5">
+            <form onSubmit={save} className="space-y-4">
+              <div>
+                <h2 className="text-[1.05rem] font-semibold">{t("lbReasonFor")}</h2>
+                {!text.trim() ? <p className="mt-1 text-ink-3">{t("pickFirst")}</p>
+                  : <p className="mt-2 break-words rounded-md border border-line bg-paper px-3 py-2 font-mono text-[0.85rem]">{text}</p>}
+              </div>
               <fieldset>
-                <legend className="font-bold">{t("fieldsInvolved")}</legend>
-                <div className="flex flex-wrap gap-x-4 gap-y-1">
-                  {vocab.fields.map((f) => (
-                    <label key={f} className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={fields.includes(f)} onChange={() => setFields(toggle(fields, f))} />{nice(f, FIELD_LABEL)}</label>
+                <legend className="mb-1.5 text-sm font-medium text-ink-2">{t("whatReason")} <span className="font-normal text-ink-3">· {t("lbKeys")}</span></legend>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {cats.map((c, i) => (
+                    <label key={c} className={cx("flex min-h-10 cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-1.5 text-[0.92rem]",
+                      cat === c ? "border-brand bg-brand-tint font-medium" : "border-line hover:bg-sunk")}>
+                      <input type="radio" name="cat" className={check} checked={cat === c} onChange={() => pick(c)} />
+                      {i < 9 && <kbd className="rounded-sm border border-line-strong px-1 font-mono text-[10px] text-ink-3">{i + 1}</kbd>}
+                      <span className="leading-snug">{nice("cat_", c)}</span>
+                    </label>
                   ))}
                 </div>
               </fieldset>
-              <fieldset>
-                <legend className="font-bold">{t("fixSteps")} ({t("rules")})</legend>
-                {fixIds.map((id) => (
-                  <label key={id} className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={fix.includes(id)} onChange={() => setFix(toggle(fix, id))} />
-                    <code className="rounded bg-gray-200 px-1 text-base">{id}</code> {rules[id] ?? ""}
-                  </label>
+              {cat && (
+                <>
+                  <fieldset>
+                    <legend className="mb-1.5 text-sm font-medium text-ink-2">{t("fieldsInvolved")}</legend>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                      {vocab.fields.map((f) => (
+                        <label key={f} className="flex items-center gap-1.5 text-[0.92rem]"><input type="checkbox" className={check} checked={fields.includes(f)} onChange={() => setFields(toggle(fields, f))} />{nice("fld_", f)}</label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <fieldset>
+                    <legend className="mb-1.5 text-sm font-medium text-ink-2">{t("fixSteps")}</legend>
+                    <div className="space-y-1">
+                      {fixIds.map((id) => (
+                        <label key={id} className="flex items-start gap-2 text-[0.92rem]"><input type="checkbox" className={cx(check, "mt-1")} checked={fix.includes(id)} onChange={() => setFix(toggle(fix, id))} />
+                          <span>{rules[id] ?? id} <span className="font-mono text-xs text-ink-3">{id}</span></span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                </>
+              )}
+              <Field label={t("labelledBy")}><Input value={by} onChange={(e) => setBy(e.target.value)} placeholder={t("yourName")} className="max-w-xs" /></Field>
+              <Button type="submit" size="lg" busy={busy} disabled={!cat || !text.trim()}>{busy ? t("saving") : t("saveNext")}</Button>
+            </form>
+          </Card>
+        </section>
+      )}
+
+      {vocab && (
+        <section className="space-y-3">
+          {!data ? <SkeletonRows rows={4} /> : (
+            <>
+              <SectionTitle>{t("labelledCount", { n: data.total })}</SectionTitle>
+              <div className="h-1.5 w-full max-w-md overflow-hidden rounded-full bg-sunk" aria-hidden>
+                <div className="h-full rounded-full bg-ok" style={{ width: `${Math.min(100, (data.total / 150) * 100)}%` }} />
+              </div>
+              <ul className="flex flex-wrap gap-1.5">
+                {cats.map((c) => (
+                  <li key={c} className="rounded-sm bg-sunk px-2 py-0.5 text-[0.82rem] text-ink-2">{nice("cat_", c)} <span className="num font-mono font-semibold text-ink">{data.counts[c] ?? 0}</span></li>
                 ))}
-              </fieldset>
+              </ul>
+              {data.labels.length > 0 && (
+                <>
+                  <h3 className="pt-3 text-[1.05rem] font-semibold">{t("lbHistory")}</h3>
+                  <Card className="divide-y divide-line">
+                    {data.labels.map((l) => (
+                      <div key={l.id} className="flex items-start gap-3 px-4 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words font-mono text-[0.85rem]">{l.text}</p>
+                          <p className="text-sm text-ink-3">
+                            <span className="font-medium text-ink-2">{nice("cat_", l.category)}</span>
+                            {l.fix_step_ids.length > 0 && <span className="font-mono text-xs"> · {l.fix_step_ids.join(", ")}</span>}
+                            {` · ${l.labelled_by ?? l.source} · ${fmtDate(l.created_at)}`}
+                          </p>
+                        </div>
+                        <Button variant="ghost" size="sm" aria-label={t("del")} icon={<Trash2 className="size-4" />} onClick={() => del(l.id)}><span className="hidden sm:inline">{t("del")}</span></Button>
+                      </div>
+                    ))}
+                  </Card>
+                </>
+              )}
             </>
           )}
-          <label className="block font-semibold">{t("labelledBy")}<input className="inp mt-1" value={by} onChange={(e) => setBy(e.target.value)} placeholder={t("yourName")} /></label>
-          <button className="btn w-full text-xl" disabled={busy || !cat || !text.trim()}>{busy ? t("saving") : t("saveNext")}</button>
-        </form>
-      </section>
-
-      <section className="space-y-3">
-        {!data ? <Loading /> : (
-          <>
-            <h2>{t("labelledCount", { n: data.total })}</h2>
-            <div className="h-4 w-full overflow-hidden rounded-full bg-gray-200"><div className="h-full bg-green-700" style={{ width: `${Math.min(100, (data.total / 150) * 100)}%` }} /></div>
-            <ul className="flex flex-wrap gap-2">
-              {cats.map((c) => <li key={c} className="rounded-full border-2 border-gray-300 px-3 py-1">{nice(c, CAT_LABEL)}: <b>{data.counts[c] ?? 0}</b></li>)}
-            </ul>
-            <div className="flex flex-wrap gap-2">
-              <a className="btn2" href="/api/v1/labels/export" download="remark_labels.jsonl">Export JSONL</a>
-              <label className="btn2 cursor-pointer">Import JSONL
-                <input type="file" accept=".jsonl,.ndjson,.txt,application/x-ndjson" className="sr-only" onChange={(e) => { importFile(e.target.files?.[0]); e.target.value = ""; }} />
-              </label>
-            </div>
-            <ul className="space-y-2">
-              {data.labels.map((l) => (
-                <li key={l.id} className="card flex flex-wrap items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words font-mono">{l.text}</p>
-                    <p className="text-base text-gray-700">
-                      <b>{nice(l.category, CAT_LABEL)}</b>{l.fix_step_ids.length > 0 && ` · ${l.fix_step_ids.join(", ")}`}
-                      {` · ${l.labelled_by ?? l.source} · ${fmtDate(l.created_at)}`}
-                    </p>
-                  </div>
-                  <button className="btn2" onClick={() => del(l.id)}>{t("del")}</button>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }

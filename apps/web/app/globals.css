@@ -1,13 +1,60 @@
 @import "tailwindcss";
 
-/* In a layer so utility classes on the element (mt-0, bg-*, max-w-*) still override these. */
-@layer components {
-  html { font-size: 18px; }
-  body { background: #fff; color: #111; }
-  .btn { @apply inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800 disabled:opacity-50; }
-  .btn2 { @apply inline-block rounded-lg border-2 border-gray-800 bg-white px-4 py-2 font-semibold text-gray-900 hover:bg-gray-100 disabled:opacity-50; }
-  .inp { @apply w-full rounded-lg border-2 border-gray-500 px-3 py-2; }
-  .card { @apply block rounded-xl border-2 border-gray-300 p-4; }
-  h1 { @apply mb-4 text-3xl font-bold; }
-  h2 { @apply mb-2 mt-4 text-2xl font-bold; }
+/* PF Desk design tokens — "PF office register": paper, ink, ledger rules, rubber stamps.
+   Utilities: bg-paper, text-ink, border-line, bg-brand … (see apps/web/DESIGN.md). */
+@theme {
+  --font-sans: var(--font-plex), var(--font-plex-deva), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --color-paper: #f5f3ec;      /* page background — warm register paper, not beige */
+  --color-sheet: #ffffff;      /* cards, tables */
+  --color-sunk: #efece3;       /* inset areas, table header, hover */
+  --color-line: #ddd8cb;       /* hairlines, ledger rules */
+  --color-line-strong: #c8c1b0;
+
+  --color-ink: #1b2230;        /* primary text */
+  --color-ink-2: #465063;      /* secondary text */
+  --color-ink-3: #767d8c;      /* captions, meta */
+
+  --color-brand: #23408e;      /* fountain-pen blue: primary actions, links, active nav */
+  --color-brand-hover: #1b336f;
+  --color-brand-tint: #e6ebf6;
+
+  --color-danger: #a8261d;     /* stamp red */
+  --color-danger-tint: #f8e6e3;
+  --color-warn: #9a5b00;       /* stamp amber */
+  --color-warn-tint: #fbefd9;
+  --color-ok: #1d6b40;         /* stamp green */
+  --color-ok-tint: #e2f1e8;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --shadow-card: 0 1px 0 rgb(27 34 48 / 0.04), 0 1px 2px rgb(27 34 48 / 0.06);
+  --shadow-pop: 0 8px 24px rgb(27 34 48 / 0.14), 0 2px 6px rgb(27 34 48 / 0.08);
 }
+
+@layer base {
+  html { font-size: 16.5px; -webkit-text-size-adjust: 100%; }
+  body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-sans); font-feature-settings: "tnum" 0; line-height: 1.5; }
+  h1, h2, h3 { color: var(--color-ink); letter-spacing: -0.01em; }
+  a { color: inherit; }
+  ::selection { background: var(--color-brand-tint); }
+  :focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 4px; }
+  /* numbers line up in tables, dates and money */
+  .num, td, .tabular { font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+}
+
+/* Legacy classes kept so untouched pages still render while they are rebuilt; new code uses lib/ui.tsx components. */
+@layer components {
+  .btn { @apply inline-flex items-center gap-2 rounded-md bg-brand px-4 py-2 font-semibold text-white hover:bg-brand-hover disabled:opacity-50; }
+  .btn2 { @apply inline-flex items-center gap-2 rounded-md border border-line-strong bg-sheet px-4 py-2 font-semibold text-ink hover:bg-sunk disabled:opacity-50; }
+  .inp { @apply w-full rounded-md border border-line-strong bg-sheet px-3 py-2 text-ink placeholder:text-ink-3 focus:border-brand focus:outline-none; }
+  .card { @apply block rounded-lg border border-line bg-sheet p-4 shadow-[var(--shadow-card)]; }
+  .stamp { @apply inline-flex items-center gap-1 rounded-sm border-[1.5px] px-1.5 py-px font-mono text-[11px] font-semibold uppercase leading-4 tracking-[0.08em]; }
+}
+
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skeleton { background: linear-gradient(90deg, var(--color-sunk) 0px, #f7f5ef 120px, var(--color-sunk) 240px); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; border-radius: 4px; }

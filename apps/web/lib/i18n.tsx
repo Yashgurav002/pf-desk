@@ -4,8 +4,14 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 // UI chrome only. Data (names, remarks, rule text, model output) and API payloads stay as they are.
 export type Lang = "en" | "hi" | "mr";
 const KEY = "pfd.lang";
+import * as core from "./strings/core";
+import * as landing from "./strings/landing";
+import * as today from "./strings/today";
+import * as claim from "./strings/claim";
+import * as tools from "./strings/tools";
+const AREAS = [core, landing, today, claim, tools];
 
-const en = {
+const baseEn = {
   // shell
   today: "Today", claims: "Claims", employees: "Employees", import: "Import", rules: "Rule Book", label: "Label", cycle: "Monthly cycle",
   logout: "Log out", demo: "Demo data only — synthetic",
@@ -66,6 +72,7 @@ const en = {
   uploadSheet: "Upload salary sheet", uploading: "Uploading…", startCycle: "Start cycle", openTasks: "Open tasks", noTasks: "No open tasks.",
   totalPayable: "Total payable", toReview: "{n} to review", showTable: "Show validation", hideTable: "Hide validation",
 };
+const en = { ...baseEn, ...core.en, ...landing.en, ...today.en, ...claim.en, ...tools.en };
 export type Key = keyof typeof en;
 
 const hi: Partial<Record<Key, string>> = {
@@ -172,7 +179,8 @@ const mr: Partial<Record<Key, string>> = {
   totalPayable: "एकूण देय", toReview: "{n} तपासायचे", showTable: "तपासणी पहा", hideTable: "तपासणी लपवा",
 };
 
-const DICT: Record<Lang, Partial<Record<Key, string>>> = { en, hi, mr };
+const merge = (l: "hi" | "mr", own: Partial<Record<Key, string>>) => Object.assign({}, own, ...AREAS.map((a) => a[l])) as Partial<Record<Key, string>>;
+const DICT: Record<Lang, Partial<Record<Key, string>>> = { en, hi: merge("hi", hi), mr: merge("mr", mr) };
 
 type Ctx = { lang: Lang; setLang: (l: Lang) => void; setDefault: (l: Lang) => void; t: (k: Key, v?: Record<string, string | number>) => string };
 const LangCtx = createContext<Ctx | null>(null);
@@ -208,10 +216,10 @@ export function useT() {
 export function LangToggle() {
   const { lang, setLang } = useT();
   return (
-    <div className="flex gap-1" role="group" aria-label="Language">
+    <div className="inline-flex rounded-md border border-line-strong bg-sheet p-0.5" role="group" aria-label="Language">
       {(["en", "hi", "mr"] as const).map((l) => (
         <button key={l} onClick={() => setLang(l)} aria-pressed={lang === l}
-          className={`min-h-11 min-w-11 rounded-lg px-3 py-2 font-semibold ${lang === l ? "bg-blue-700 text-white" : "border-2 border-gray-500 bg-white text-gray-900"}`}>
+          className={`h-8 min-w-10 rounded-[4px] px-2 text-sm font-semibold transition-colors ${lang === l ? "bg-ink text-white" : "text-ink-2 hover:bg-sunk"}`}>
           {{ en: "EN", hi: "हिं", mr: "मरा" }[l]}
         </button>
       ))}

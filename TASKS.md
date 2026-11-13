@@ -124,6 +124,18 @@ Design: fine-tuned **Qwen3-8B** (Tinker LoRA) does extraction — remark → `{c
 - [x] P4.10 Rejected claims also recorded into history_claims by ClaimFollowUpWorkflow (one row per claim + outcome)
 - [ ] P4.11 Voice: create the ElevenLabs agent (custom LLM → `/v1/voice/llm/chat/completions`, Bearer = VOICE_SHARED_SECRET, system prompt contains `help_token: {{help_token}}`) — **needs you** (ElevenLabs key) + a public URL
 
+## Phase 5 — UI redesign (2026-11-13; approved by user: "build it", must not look AI-generated)
+Design language: "PF office register" — paper-white, ink-blue, ledger tables, rubber-stamp statuses, IBM Plex. Own components (no shadcn defaults). Guide: `apps/web/DESIGN.md`.
+- [x] U0 Foundation: tokens + fonts + core components (`lib/ui.tsx`), sidebar/topbar/bottom-tab shell, split i18n per area (chief)
+- [x] U0b Live site: retry DB connection on boot, real error text, "waking up" screen (chief)
+- [x] U0c Security: Next.js 16.4.0 → 16.4.6 (critical unauthenticated RCE in <=16.4.0); commit b5ce1a5 (push pending)
+- [x] U1 Public landing page at `/`, Today moves to `/today`; login with one-tap "Try the demo" (agent L-landing)
+- [x] U2 Today inbox (summary tiles + "Do next" list), claims list as ledger table, "+ New claim" flow, global search (agent T-today)
+- [x] U3 Claim workspace as guided steps (Check → Fix → Inform → Submit → Track / Rejected → Decode → Resubmit), plain-language "Why?" (agent C-claim)
+- [x] U4 Tools: standalone Decode page, Cycle, Companies & workers, Rule Book, Import, Label (in Settings), employee help page restyle (agent K-tools)
+- [x] U5 First-run tour + "?" help, empty states, loading skeletons (agent L-landing)
+- [x] U6 Integration: typecheck, build, click-through screenshots of every page desktop + phone, fix, commit, deploy (chief)
+
 ## Later phases (blocked on keys / credits / dad's input)
 - [ ] P0 Interview dad, verify Rule Book entries (§2.3, §5) — **needs dad**
 - [ ] P0 Claim promos, TabPFN key, domain — **needs you**

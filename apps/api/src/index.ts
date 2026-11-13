@@ -100,7 +100,9 @@ app.get('/health', async (c) => {
 // ---------- shared queries ----------
 const CLAIM_ROW = `select c.id, c.form, c.status, c.employee_id, e.name_uan employee_name, er.name employer_name,
   c.risk_pct, c.submitted_at, c.eta_high, c.rejection_remark,
-  (select jsonb_array_length(p.issues) from precheck_results p where p.claim_id = c.id order by p.created_at desc limit 1)::int issue_count
+  (select jsonb_array_length(p.issues) from precheck_results p where p.claim_id = c.id order by p.created_at desc limit 1)::int issue_count,
+  c.eta_days, (select i from precheck_results p, jsonb_array_elements(p.issues) i where p.claim_id = c.id
+    and p.created_at = (select max(created_at) from precheck_results where claim_id = c.id) order by (i->>'severity') = 'blocker' desc limit 1) top_issue
   from claims c join employees e on e.id = c.employee_id join employers er on er.id = e.employer_id`;
 
 async function getEmployee(id: string) {
@@ -164,11 +166,12 @@ app.get('/v1/today', async (c) => {
     and p.created_at = (select max(created_at) from precheck_results where claim_id = c.id))`;
   const t = today();
   const wageMonth = addDays(t.slice(0, 8) + '01', -1).slice(0, 8) + '01';
-  const [fix, rejected, overdue, salaryMissing, paymentsDue, escalations] = await Promise.all([
-    query(`${CLAIM_ROW} where c.status in ('draft','checked') and (c.risk_pct >= 0.5 or ${latestBlocker}) order by c.risk_pct desc nulls last limit 50`),
+  const FIX = `c.status in ('draft','checked') and (c.risk_pct >= 0.5 or ${latestBlocker})`;
+  const OVERDUE = `c.status in ('submitted','under_process','resubmitted') and c.submitted_at + coalesce(c.eta_high, 30)::int < $1::date`;
+  const [fix, rejected, overdue, salaryMissing, paymentsDue, escalations, [counts]] = await Promise.all([
+    query(`${CLAIM_ROW} where ${FIX} order by c.risk_pct desc nulls last limit 50`),
     query(`${CLAIM_ROW} where c.status = 'rejected' order by c.rejected_at desc nulls last limit 50`),
-    query(`${CLAIM_ROW} where c.status in ('submitted','under_process','resubmitted')
-      and c.submitted_at + coalesce(c.eta_high, 30)::int < $1::date order by c.submitted_at limit 50`, [t]),
+    query(`${CLAIM_ROW} where ${OVERDUE} order by c.submitted_at limit 50`, [t]),
     query(`select er.id employer_id, er.name, $1::text wage_month from employers er
       where extract(day from $2::date) >= er.cycle_day
       and not exists (select 1 from salary_uploads s where s.employer_id = er.id and s.wage_month = $1::date) order by er.name`, [wageMonth, t]),
@@ -177,8 +180,11 @@ app.get('/v1/today', async (c) => {
       where s.status in ('received','validated') and s.wage_month = $1::date
       and (s.wage_month + interval '1 month' + (er.due_day - 1) * interval '1 day')::date <= $2::date + 3 order by due_date`, [wageMonth, t]),
     query(`select id, title, ref_id, created_at from tasks where kind = 'escalation' and not done order by created_at desc`),
+    // full counts; the lists above stop at 50
+    query(`select count(*) filter (where ${FIX})::int fix_before_submit, count(*) filter (where c.status = 'rejected')::int rejected,
+      count(*) filter (where ${OVERDUE})::int overdue from claims c`, [t]),
   ]);
-  return c.json({ fix_before_submit: fix, rejected, overdue, salary_missing: salaryMissing, payments_due: paymentsDue, escalations });
+  return c.json({ fix_before_submit: fix, rejected, overdue, salary_missing: salaryMissing, payments_due: paymentsDue, escalations, counts });
 });
 // ---------- monthly cycle (F5, Temporal) ----------
 // wage_month 'YYYY-MM' or 'YYYY-MM-DD' -> 'YYYY-MM-01'; default: last month (the one being filed now)
@@ -236,8 +242,10 @@ app.post('/v1/tasks/:id/done', async (c) => {
 });
 
 // ---------- employers / employees ----------
-app.get('/v1/employers', async (c) => c.json(await query(`select er.id, er.name, er.establishment_code, er.contact_name,
-  (select count(*)::int from employees e where e.employer_id = er.id) employee_count from employers er order by er.name`)));
+app.get('/v1/employers', async (c) => c.json(await query(`select er.id, er.name, er.establishment_code, er.contact_name, er.cycle_day, er.due_day,
+  (select count(*)::int from employees e where e.employer_id = er.id) employee_count,
+  (select count(*)::int from claims c join employees e on e.id = c.employee_id where e.employer_id = er.id and c.status not in ('settled','closed')) open_claims
+  from employers er order by er.name`)));
 app.post('/v1/employers', async (c) => {
   const b = await c.req.json();
   if (!b.name) return c.json({ error: 'name required' }, 400);
@@ -245,13 +253,18 @@ app.post('/v1/employers', async (c) => {
     values ($1,$2,$3,$4,coalesce($5,1),coalesce($6,15)) returning *`, [b.name, b.establishment_code, b.contact_name, b.contact_phone, b.cycle_day, b.due_day]);
   return c.json(r);
 });
+// Digits (4-12) match the end of the UAN: compared after decrypting, server-side only; callers get masked UANs back.
+// ponytail: decrypts every UAN per digit search; fine for a few thousand workers, add a uan_last4 column if it gets slow
+const uanMatches = async (q: string): Promise<string[]> => (/^\d{4,12}$/.test(q)
+  ? (await query('select id, uan from employees')).filter((r: any) => (dec(r.uan) ?? '').endsWith(q)).map((r: any) => r.id)
+  : []);
 app.get('/v1/employees', async (c) => {
-  const q = c.req.query('q') ?? '', employer = c.req.query('employer_id') || null;
+  const q = (c.req.query('q') ?? '').trim(), employer = c.req.query('employer_id') || null;
   const rows = await query(`select e.id, e.employer_id, er.name employer_name, e.name_uan, e.uan, e.preferred_language, e.date_of_exit,
     (select count(*)::int from claims c where c.employee_id = e.id) claim_count
     from employees e join employers er on er.id = e.employer_id
-    where ($1 = '' or e.name_uan ilike '%' || $1 || '%') and ($2::uuid is null or e.employer_id = $2::uuid)
-    order by e.name_uan limit 200`, [q, employer]);
+    where ($1 = '' or e.name_uan ilike '%' || $1 || '%' or e.id = any($3::uuid[])) and ($2::uuid is null or e.employer_id = $2::uuid)
+    order by e.name_uan limit 200`, [q, employer, await uanMatches(q)]);
   return c.json(rows.map(({ uan, ...r }: any) => ({ ...r, uan_masked: mask(dec(uan) ?? '') })));
 });
 app.get('/v1/employees/:id', async (c) => {
@@ -262,9 +275,17 @@ app.get('/v1/employees/:id', async (c) => {
 });
 
 // ---------- claims ----------
+// ?q= matches worker name, company, or UAN digits; ?status= takes one status or a comma list
+const CLAIM_Q = `($1 = '' or e.name_uan ilike '%' || $1 || '%' or er.name ilike '%' || $1 || '%' or c.employee_id = any($2::uuid[]))`;
+app.get('/v1/claims/counts', async (c) => {
+  const q = (c.req.query('q') ?? '').trim();
+  const rows = await query(`select c.status, count(*)::int n from claims c join employees e on e.id = c.employee_id join employers er on er.id = e.employer_id
+    where ${CLAIM_Q} group by c.status`, [q, await uanMatches(q)]);
+  return c.json(Object.fromEntries(rows.map((r: any) => [r.status, r.n])));
+});
 app.get('/v1/claims', async (c) => {
-  const s = c.req.query('status') || null;
-  return c.json(await query(`${CLAIM_ROW} where ($1::text is null or c.status = $1) order by c.created_at desc limit 300`, [s]));
+  const s = c.req.query('status')?.split(',') ?? null, q = (c.req.query('q') ?? '').trim();
+  return c.json(await query(`${CLAIM_ROW} where ($3::text[] is null or c.status = any($3)) and ${CLAIM_Q} order by c.created_at desc limit 300`, [q, await uanMatches(q), s]));
 });
 app.post('/v1/claims', async (c) => {
   const b = await c.req.json();
@@ -405,6 +426,35 @@ async function extractRemark(remark: string, pii: Pii) {
   }
   throw lastErr;
 }
+// stage 1 + stage 2; `claimDesc` names the claim ("Ravi's Form 19 claim") or stays generic when there is no claim
+async function decodeRemark(remark: string, pii: Pii, claimDesc: string, greeting = '') {
+  const x = await extractRemark(remark, pii);
+  const rules = await query('select id, title, body from rules where id = any($1)', [x.fix_step_ids]);
+  const raw = await chat([
+    { role: 'system', content: CONSULTANT_PROMPT },
+    { role: 'user', content: `EPFO rejected ${claimDesc}. Problem: ${x.category.replaceAll('_', ' ')} (fields: ${x.fields_involved.join(', ') || 'unclear'}).
+How to fix:\n${rules.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).join('\n') || '- ask the consultant'}
+Write 1-2 short polite WhatsApp sentences to the employee saying exactly what document or correction is needed. No rule ids.${greeting}
+Reply with exactly this JSON shape: {"hi": "<message in Hindi, Devanagari script>", "mr": "<message in Marathi, Devanagari script>", "en": "<message in English>"}.` },
+  ], pii, { json: true, kind: 'decode_message' });
+  const j = JSON.parse(raw);
+  const m = { hi: j.hi ?? j.hindi ?? j.Hindi, mr: j.mr ?? j.marathi ?? j.Marathi, en: j.en ?? j.english ?? j.English };
+  return {
+    category: x.category, fields_involved: x.fields_involved,
+    fix_steps: rules.map((r: any) => ({ id: r.id, title: r.title })),
+    employee_message_hi: m.hi ?? '', employee_message_mr: m.mr ?? '', employee_message_en: m.en ?? '',
+    model: `${x.model} + ${env.LLM_MODEL} messages`,
+  };
+}
+// no claim, no employee: the remark itself goes through the tokenizer (pattern-based) before any model sees it
+app.post('/v1/decode', async (c) => {
+  const { remark } = await c.req.json().catch(() => ({}));
+  if (typeof remark !== 'string' || !remark.trim()) return c.json({ error: 'remark required' }, 400);
+  try {
+    return c.json(await decodeRemark(remark.slice(0, 2000), new Pii(), "an employee's PF claim",
+      ' Address the employee generically (e.g. "Namaste ji" / "Namaskar"), with no name.'));
+  } catch (err) { return llmError(c, err); }
+});
 app.post('/v1/claims/:id/decode', async (c) => {
   const { remark } = await c.req.json();
   if (!remark?.trim()) return c.json({ error: 'remark required' }, 400);
@@ -413,23 +463,7 @@ app.post('/v1/claims/:id/decode', async (c) => {
   const e = await getEmployee(claim.employee_id);
   const pii = employeePii(e);
   try {
-    const x = await extractRemark(remark, pii);
-    const rules = await query('select id, title, body from rules where id = any($1)', [x.fix_step_ids]);
-    const raw = await chat([
-      { role: 'system', content: CONSULTANT_PROMPT },
-      { role: 'user', content: `EPFO rejected ${e.name_uan}'s Form ${claim.form} claim. Problem: ${x.category.replaceAll('_', ' ')} (fields: ${x.fields_involved.join(', ') || 'unclear'}).
-How to fix:\n${rules.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).join('\n') || '- ask the consultant'}
-Write 1-2 short polite WhatsApp sentences to the employee saying exactly what document or correction is needed. No rule ids.
-Reply with exactly this JSON shape: {"hi": "<message in Hindi, Devanagari script>", "mr": "<message in Marathi, Devanagari script>", "en": "<message in English>"}.` },
-    ], pii, { json: true, kind: 'decode_message' });
-    const j = JSON.parse(raw);
-    const m = { hi: j.hi ?? j.hindi ?? j.Hindi, mr: j.mr ?? j.marathi ?? j.Marathi, en: j.en ?? j.english ?? j.English };
-    const out = {
-      category: x.category, fields_involved: x.fields_involved,
-      fix_steps: rules.map((r: any) => ({ id: r.id, title: r.title })),
-      employee_message_hi: m.hi ?? '', employee_message_mr: m.mr ?? '', employee_message_en: m.en ?? '',
-      model: `${x.model} + ${env.LLM_MODEL} messages`,
-    };
+    const out = await decodeRemark(remark, pii, `${e.name_uan}'s Form ${claim.form} claim`);
     await query('update claims set decoded = $2, rejection_remark = coalesce(rejection_remark, $3) where id = $1', [claim.id, JSON.stringify(out), remark]);
     return c.json(out);
   } catch (err) { return llmError(c, err); }
