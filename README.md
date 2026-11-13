@@ -20,7 +20,7 @@ pnpm seed                 # wipe and reload synthetic demo data
 pnpm test
 ```
 
-No Docker needed: the database is embedded Postgres (PGlite + pgvector) in `.data/`. To use real Postgres / Tiger Cloud, set `DATABASE_URL` (`docker compose up db` gives you one on port 5433).
+No Docker needed: the database is embedded Postgres (PGlite + pgvector) in `.data/`. To use a real Postgres (e.g. Neon, which hosts the public demo), set `DATABASE_URL` (`docker compose up db` gives you one on port 5433).
 
 ## Real data (local mode)
 
