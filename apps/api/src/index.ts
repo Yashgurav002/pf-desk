@@ -638,21 +638,28 @@ Rule Book entries:\n${hits.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).jo
 // platform's health check would otherwise kill us before we ever answer. /v1 says "starting" until ready.
 const port = Number(env.API_PORT || env.PORT || 8787);
 serve({ fetch: app.fetch, port }, () => console.log(`PF Desk API on :${port} (demo=${DEMO})`));
-try {
-  const t0 = Date.now();
-  await migrate();
-  await seedRules();
-  if (DEMO) {
-    console.log('[boot] seeding demo data…', await seedDemo());
-    // demo realism: the consultant has already run Pre-check on open claims
-    for (const { id } of await query(`select id from claims c where status in ('draft','checked') and not exists (select 1 from precheck_results p where p.claim_id = c.id)`)) await precheckClaim(id, { fast: true });
+// AggregateError (e.g. every DB address refused) has an empty message; say something useful instead
+const describe = (err: any): string =>
+  err?.message || err?.code || (err?.errors ?? []).map((e: any) => e?.message || e?.code).filter(Boolean).join('; ') || String(err);
+// Retry until the database answers: a free hosted DB may be paused/waking; health reports the last error meanwhile.
+for (let attempt = 1; booting; attempt++) {
+  try {
+    const t0 = Date.now();
+    await migrate();
+    await seedRules();
+    if (DEMO) {
+      console.log('[boot] seeding demo data…', await seedDemo());
+      // demo realism: the consultant has already run Pre-check on open claims
+      for (const { id } of await query(`select id from claims c where status in ('draft','checked') and not exists (select 1 from precheck_results p where p.claim_id = c.id)`)) await precheckClaim(id, { fast: true });
+    }
+    booting = false; bootError = null;
+    console.log(`[boot] ready in ${Math.round((Date.now() - t0) / 1000)}s (attempt ${attempt})`);
+    embedMissingRules().catch((err) => console.warn('embedding skipped:', err.message));
+  } catch (err) {
+    bootError = `${describe(err)} — retrying (attempt ${attempt})`;
+    console.error(`[boot] FAILED (attempt ${attempt}), retrying in 15 s:`, err);
+    await new Promise((r) => setTimeout(r, 15_000));
   }
-  booting = false;
-  console.log(`[boot] ready in ${Math.round((Date.now() - t0) / 1000)}s`);
-  embedMissingRules().catch((err) => console.warn('embedding skipped:', err.message));
-} catch (err) {
-  bootError = (err as Error).message;
-  console.error('[boot] FAILED:', err);
 }
 // Temporal worker in-process: embedded PGlite is one process per data dir. With DATABASE_URL you can set
 // TEMPORAL_WORKER=off and run `pnpm --filter api worker` separately. Retries quietly while Temporal is down.

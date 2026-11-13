@@ -37,7 +37,8 @@ async function open(): Promise<Driver> {
   };
 }
 
-const get = () => (driver ??= open());
+// a failed open must not be cached forever (boot retries until the DB answers)
+const get = () => (driver ??= open().catch((err) => { driver = null; throw err; }));
 
 export async function query<T = any>(sql: string, params?: unknown[]): Promise<T[]> {
   return (await get()).query(sql, params) as Promise<T[]>;
