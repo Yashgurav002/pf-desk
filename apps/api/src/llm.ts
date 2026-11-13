@@ -13,8 +13,6 @@ function headers(key = process.env.LLM_API_KEY): Record<string, string> {
   return h;
 }
 
-let thinkingOffOk = true;
-
 export async function chat(
   messages: ChatMessage[],
   pii: Pii,
@@ -36,19 +34,23 @@ export async function chat(
   const noSystem = !own && process.env.LLM_COMPAT === 'gemma-api';
   if (noSystem) body.messages = foldSystem(body.messages as ChatMessage[]);
   if (opts.json && !noSystem && !own) body.response_format = { type: 'json_object' };
-  // Gemma 4 thinks by default (~40 s per answer on the free API); ask for no reasoning, and drop the
-  // parameter for good if the endpoint rejects it.
-  if (noSystem && thinkingOffOk) body.reasoning_effort = 'none';
+  // Google's Gemma endpoint rejects reasoning_effort ("Thinking budget is not supported"), so it isn't sent;
+  // <thought> blocks are stripped from the reply instead (stripThinking).
+  // Hosted endpoints have bad spells (gemma-4-26b on AI Studio returned 500s even for "say hello", Nov 2026):
+  // on a 5xx retry, alternating with LLM_FALLBACK_MODEL (default for the Gemma API: the larger gemma-4-31b-it).
+  const fallback = own ? '' : process.env.LLM_FALLBACK_MODEL || (noSystem ? 'gemma-4-31b-it' : '');
 
   const t0 = Date.now();
   const data: any = await span(`llm.${opts.kind ?? 'chat'}`, 'gen_ai.chat', { model }, async () => {
-    const send = () => fetch(url, { method: 'POST', headers: headers(own ? opts.apiKey ?? '' : undefined), body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
-    let res = await send();
-    if (res.status === 400 && body.reasoning_effort) {
-      console.warn('[llm] endpoint rejected reasoning_effort; continuing without it:', (await res.text()).slice(0, 200));
-      thinkingOffOk = false;
-      delete body.reasoning_effort;
-      res = await send();
+    const send = (m: string) => fetch(url, { method: 'POST', headers: headers(own ? opts.apiKey ?? '' : undefined),
+      body: JSON.stringify({ ...body, model: m }), signal: AbortSignal.timeout(120_000) });
+    // ponytail: fixed retry list, no backoff — 5xx answers come back in ~1 s, so a few quick tries are cheap
+    const tries = fallback && fallback !== model ? [model, model, fallback, model, fallback] : [model, model, model];
+    let res = await send(tries[0]);
+    for (const m of tries.slice(1)) {
+      if (res.status < 500) break;
+      console.warn(`[llm] ${res.status} from the model endpoint; retrying with ${m}`);
+      res = await send(m);
     }
     if (!res.ok) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return res.json();

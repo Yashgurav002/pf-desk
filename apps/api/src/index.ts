@@ -34,7 +34,7 @@ const STATUSES = ['draft', 'checked', 'submitted', 'under_process', 'settled', '
 const CONSULTANT_PROMPT = `You help a Provident Fund consultant prepare and check EPF claims and monthly filings.
 Use ONLY the facts and Rule Book entries provided. Cite the rule id for every rule you state.
 Never invent rates, deadlines, form requirements or eligibility rules. If the Rule Book doesn't cover it, say so.
-Identifiers appear as tokens like [NAME_1] or [UAN_1]; keep them exactly as given.
+Names and ID numbers appear as placeholder tokens in square brackets; copy them exactly as given and never invent new ones.
 Be brief and practical: what is wrong, why it matters, exactly how to fix it.`;
 const HELPLINE_PROMPT = `You answer one employee's questions about their own PF claim, in their language (Hindi, Marathi or English).
 Use only the claim facts, the settlement estimate and the Rule Book entries provided.
@@ -430,20 +430,25 @@ async function extractRemark(remark: string, pii: Pii) {
 async function decodeRemark(remark: string, pii: Pii, claimDesc: string, greeting = '') {
   const x = await extractRemark(remark, pii);
   const rules = await query('select id, title, body from rules where id = any($1)', [x.fix_step_ids]);
-  const raw = await chat([
+  // stage 2 is a nicety: if the language model is down, still return the decoded reason + fix steps
+  let raw = '{}', msgError = '';
+  try {
+    raw = await chat([
     { role: 'system', content: CONSULTANT_PROMPT },
     { role: 'user', content: `EPFO rejected ${claimDesc}. Problem: ${x.category.replaceAll('_', ' ')} (fields: ${x.fields_involved.join(', ') || 'unclear'}).
 How to fix:\n${rules.map((r: any) => `[${r.id}] ${r.title}: ${r.body}`).join('\n') || '- ask the consultant'}
 Write 1-2 short polite WhatsApp sentences to the employee saying exactly what document or correction is needed. No rule ids.${greeting}
 Reply with exactly this JSON shape: {"hi": "<message in Hindi, Devanagari script>", "mr": "<message in Marathi, Devanagari script>", "en": "<message in English>"}.` },
-  ], pii, { json: true, kind: 'decode_message' });
-  const j = JSON.parse(raw);
+    ], pii, { json: true, kind: 'decode_message' });
+  } catch (err) { msgError = (err as Error).message; console.warn('[decode] messages skipped:', msgError.slice(0, 120)); }
+  let j: any = {};
+  try { j = JSON.parse(raw); } catch { msgError ||= 'message reply was not valid JSON'; }
   const m = { hi: j.hi ?? j.hindi ?? j.Hindi, mr: j.mr ?? j.marathi ?? j.Marathi, en: j.en ?? j.english ?? j.English };
   return {
     category: x.category, fields_involved: x.fields_involved,
     fix_steps: rules.map((r: any) => ({ id: r.id, title: r.title })),
     employee_message_hi: m.hi ?? '', employee_message_mr: m.mr ?? '', employee_message_en: m.en ?? '',
-    model: `${x.model} + ${env.LLM_MODEL} messages`,
+    model: msgError ? `${x.model} · worker messages unavailable right now, try Decode again` : `${x.model} + ${env.LLM_MODEL} messages`,
   };
 }
 // no claim, no employee: the remark itself goes through the tokenizer (pattern-based) before any model sees it
